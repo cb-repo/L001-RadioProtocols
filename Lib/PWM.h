@@ -4,7 +4,9 @@
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 #include "STM32X.h"
-#include "UART.h"
+#include "Core.h"
+#include "GPIO.h"
+#include "TIM.h"
 
 /*
  * PUBLIC DEFINITIONS
@@ -16,16 +18,20 @@
 #define PWM_MIN				1000
 #define PWM_CENTER			1500
 #define PWM_MAX				2000
-#define PWM_FULLSCALE		(PWM_MAX-PWM_MIN)
-#define PWM_HALFSCALE		(PWM_MAX-PWM_CENTER)
-
 
 /*
  * PUBLIC TYPES
  */
 
 typedef struct {
-	bool lost_frame;
+	GPIO_t * GPIO[PWM_NUM_CHANNELS];
+	uint8_t Pin[PWM_NUM_CHANNELS];
+	TIM_t * Timer;
+	uint32_t Tim_Freq;
+	uint32_t Tim_Reload;
+} PWM_Properties;
+
+typedef struct {
 	bool failsafe;
 	int16_t ch[PWM_NUM_CHANNELS];
 } PWM_Data;
@@ -34,7 +40,8 @@ typedef struct {
  * PUBLIC FUNCTIONS
  */
 
-void PWM_Init (void);
+bool PWM_Detect(PWM_Properties);
+void PWM_Init (PWM_Properties);
 void PWM_Deinit (void);
 void PWM_Update (void);
 PWM_Data* PWM_GetDataPtr (void);

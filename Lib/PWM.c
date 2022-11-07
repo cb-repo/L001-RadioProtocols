@@ -1,15 +1,16 @@
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 #include "PWM.h"
-#include "Core.h"
-#include "GPIO.h"
-#include "TIM.h"
 
 /*
  * PRIVATE DEFINITIONS
  */
 
-#define PWM_THRESH		500
+#define PWM_EOF_TIME		4000
+#define PWM_JITTER_ARRAY	3
+#define PWM_THRESHOLD		500
+#define PWM_TIMEOUT_CYCLES	3
+#define PWM_TIMEOUT			(PWM_PERIOD * PWM_TIMEOUT_CYCLES)
 
 /*
  * PRIVATE TYPES
@@ -19,67 +20,115 @@
  * PRIVATE PROTOTYPES
  */
 
-void RADIO_PWM1_IRQ (void);
-void RADIO_PWM2_IRQ (void);
-void RADIO_PWM3_IRQ (void);
-void RADIO_PWM4_IRQ (void);
+uint16_t PWM_Truncate (uint16_t);
+void PWM_memset (void);
+void PWM1_IRQ (void);
+void PWM2_IRQ (void);
+void PWM3_IRQ (void);
+void PWM4_IRQ (void);
 
 /*
  * PRIVATE VARIABLES
  */
 
-volatile uint16_t rx[PWM_NUM_CHANNELS] = {0};
-volatile uint32_t rxHeartbeat = 0;
+volatile uint16_t rx[PWM_JITTER_ARRAY][PWM_NUM_CHANNELS] = {0};
+volatile bool rxHeartbeat[PWM_NUM_CHANNELS] = {0};
+PWM_Properties pwm = {0};
 PWM_Data data = {0};
-
-//volatile uint16_t input[NUM_TOTALINPUTS] = {RADIO_CENTER, RADIO_CENTER, RADIO_CENTER, RADIO_CENTER};
-
 
 /*
  * PUBLIC FUNCTIONS
  */
 
-void PWM_Init (void)
+// TODO: Fix the false-positive when running PPM protocol
+bool PWM_Detect(PWM_Properties p)
 {
-	for (uint8_t i = 0; i < PWM_NUM_CHANNELS; i++)
+	PWM_Init(p);
+
+	uint32_t tick = CORE_GetTick();
+	while ((PWM_TIMEOUT * 2) > CORE_GetTick() - tick)
 	{
-		rx[i] = PWM_CENTER;
+		CORE_Idle();
 	}
 
-	TIM_Init(TIM_RADIO, TIM_RADIO_FREQ, TIM_RADIO_RELOAD);
-	TIM_Start(TIM_RADIO);
+	PWM_Deinit();
 
-	GPIO_EnableInput(PWM_S1_GPIO, PWM_S1_PIN, GPIO_Pull_Down);
-	GPIO_EnableInput(PWM_S2_GPIO, PWM_S2_PIN, GPIO_Pull_Down);
-	GPIO_EnableInput(PWM_S3_GPIO, PWM_S3_PIN, GPIO_Pull_Down);
-	GPIO_EnableInput(PWM_S4_GPIO, PWM_S4_PIN, GPIO_Pull_Down);
-	GPIO_OnChange(PWM_S1_GPIO, PWM_S1_PIN, GPIO_IT_Both, RADIO_PWM1_IRQ);
-	GPIO_OnChange(PWM_S2_GPIO, PWM_S2_PIN, GPIO_IT_Both, RADIO_PWM2_IRQ);
-	GPIO_OnChange(PWM_S3_GPIO, PWM_S3_PIN, GPIO_IT_Both, RADIO_PWM3_IRQ);
-	GPIO_OnChange(PWM_S4_GPIO, PWM_S4_PIN, GPIO_IT_Both, RADIO_PWM4_IRQ);
+	bool retVal = false;
+	for (uint8_t i = 0; i < PWM_NUM_CHANNELS; i++)
+	{
+		retVal = retVal || rxHeartbeat[i];
+	}
+	return retVal;
+}
+
+void PWM_Init (PWM_Properties p)
+{
+	PWM_memset();
+
+	pwm = p;
+	TIM_Init(pwm.Timer, pwm.Tim_Freq, pwm.Tim_Reload);
+	TIM_Start(pwm.Timer);
+
+	GPIO_EnableInput(pwm.GPIO[1], pwm.Pin[1], GPIO_Pull_Down);
+	GPIO_EnableInput(pwm.GPIO[2], pwm.Pin[2], GPIO_Pull_Down);
+	GPIO_EnableInput(pwm.GPIO[3], pwm.Pin[3], GPIO_Pull_Down);
+	GPIO_EnableInput(pwm.GPIO[4], pwm.Pin[4], GPIO_Pull_Down);
+	GPIO_OnChange(pwm.GPIO[1], pwm.Pin[1], GPIO_IT_Both, PWM1_IRQ);
+	GPIO_OnChange(pwm.GPIO[2], pwm.Pin[2], GPIO_IT_Both, PWM2_IRQ);
+	GPIO_OnChange(pwm.GPIO[3], pwm.Pin[3], GPIO_IT_Both, PWM3_IRQ);
+	GPIO_OnChange(pwm.GPIO[4], pwm.Pin[4], GPIO_IT_Both, PWM4_IRQ);
 }
 
 void PWM_Deinit (void)
 {
 	TIM_Deinit(TIM_RADIO);
 
-	GPIO_OnChange(PWM_S1_GPIO, PWM_S1_PIN, GPIO_IT_None, NULL);
-	GPIO_OnChange(PWM_S2_GPIO, PWM_S2_PIN, GPIO_IT_None, NULL);
-	GPIO_OnChange(PWM_S3_GPIO, PWM_S3_PIN, GPIO_IT_None, NULL);
-	GPIO_OnChange(PWM_S4_GPIO, PWM_S4_PIN, GPIO_IT_None, NULL);
-	GPIO_Deinit(PWM_S1_GPIO, PWM_S1_PIN);
-	GPIO_Deinit(PWM_S2_GPIO, PWM_S2_PIN);
-	GPIO_Deinit(PWM_S3_GPIO, PWM_S3_PIN);
-	GPIO_Deinit(PWM_S4_GPIO, PWM_S4_PIN);
+	for (uint8_t i = 0; i < PWM_NUM_CHANNELS; i++)
+	{
+		GPIO_OnChange(pwm.GPIO[i], pwm.Pin[i], GPIO_IT_None, NULL);
+		GPIO_Deinit(pwm.GPIO[i], pwm.Pin[i]);
+	}
 }
 
 void PWM_Update (void)
 {
-	for (uint8_t i = 0; i < PWM_NUM_CHANNELS; i++)
+	uint32_t now = CORE_GetTick();
+	static uint32_t prev = 0;
+
+	// Check for New Input Data
+	if (rxHeartbeat[0] || rxHeartbeat [1] || rxHeartbeat [2] || rxHeartbeat [3])
 	{
-		data.ch[i] = rx[i];
+		// Average and Assign Input to data Struct
+		for (uint8_t j = 0; j < PWM_NUM_CHANNELS; j++)
+		{
+			uint8_t avg = 0;
+			uint32_t ch = 0;
+			for (uint8_t i = 0; i < PWM_JITTER_ARRAY; i++)
+			{
+				uint16_t trunc = PWM_Truncate(rx[i][j]);
+				if (trunc != 0)
+				{
+					ch += trunc;
+					avg += 1;
+				}
+			}
+			ch /= avg;
+			data.ch[j] = ch;
+		}
+		rxHeartbeat[0] = false;
+		rxHeartbeat[1] = false;
+		rxHeartbeat[2] = false;
+		rxHeartbeat[3] = false;
+		prev = now;
 	}
-	// Check for failsafe + framelost
+
+	// Check for Input Failsafe
+	if (PWM_TIMEOUT <= (now - prev)) {
+		data.failsafe = true;
+		PWM_memset();
+	} else {
+		data.failsafe = false;
+	}
 }
 
 PWM_Data* PWM_GetDataPtr (void)
@@ -91,16 +140,47 @@ PWM_Data* PWM_GetDataPtr (void)
  * PRIVATE FUNCTIONS
  */
 
+uint16_t PWM_Truncate (uint16_t r)
+{
+	uint16_t retVal = 0;
+
+	if (r == 0) {
+		retVal = 0;
+	} else if (r < (PWM_MIN - PWM_THRESHOLD)) {
+		retVal = 0;
+	} else if (r < PWM_MIN) {
+		retVal = PWM_MIN;
+	} else if (r <= PWM_MAX) {
+		retVal = r;
+	} else if (r < (PWM_MAX + PWM_THRESHOLD))	{
+		retVal = PWM_MAX;
+	} else {
+		retVal = 0;
+	}
+
+	return retVal;
+}
+
+void PWM_memset (void)
+{
+	for (uint8_t j = 0; j < PWM_NUM_CHANNELS; j++)
+	{
+		for (uint8_t i = 0; i < PWM_JITTER_ARRAY; i++)
+		{
+			rx[i][j] = 0;
+		}
+	}
+}
 
 /*
  * INTERRUPT ROUTINES
  */
 
-void RADIO_PWM1_IRQ (void)
+void PWM1_IRQ (void)
 {
 	uint16_t now = TIM_Read(TIM_RADIO);
 	uint16_t pulse = 0;
-	static uint16_t tick;
+	static uint16_t tick = 0;
 
 	if (GPIO_Read(PWM_S1_GPIO, PWM_S1_PIN))
 	{
@@ -110,19 +190,19 @@ void RADIO_PWM1_IRQ (void)
 	{
 		pulse = now - tick;
 		// Check pulse is valid
-		if (pulse <= (PWM_MAX + PWM_THRESH) && pulse >= (PWM_MIN - PWM_THRESH))
+		if (pulse <= (PWM_MAX + PWM_THRESHOLD) && pulse >= (PWM_MIN - PWM_THRESHOLD))
 		{
-			rx[0] = pulse;
-			rxHeartbeat = CORE_GetTick();
+			rx[0][0] = pulse;
+			rxHeartbeat[0] = CORE_GetTick();
 		}
 	}
 }
 
-void RADIO_PWM2_IRQ (void)
+void PWM2_IRQ (void)
 {
 	uint16_t now = TIM_Read(TIM_RADIO);
 	uint16_t pulse = 0;
-	static uint16_t tick;
+	static uint16_t tick = 0;
 
 	if (GPIO_Read(PWM_S2_GPIO, PWM_S2_PIN))
 	{
@@ -133,19 +213,19 @@ void RADIO_PWM2_IRQ (void)
 		pulse = now - tick;
 
 		// Check pulse is valid
-		if (pulse <= (PWM_MAX + PWM_THRESH) && pulse >= (PWM_MIN - PWM_THRESH))
+		if (pulse <= (PWM_MAX + PWM_THRESHOLD) && pulse >= (PWM_MIN - PWM_THRESHOLD))
 		{
-			rx[1] = pulse;
-			rxHeartbeat = CORE_GetTick();
+			rx[0][1] = pulse;
+			rxHeartbeat[1] = CORE_GetTick();
 		}
 	}
 }
 
-void RADIO_PWM3_IRQ (void)
+void PWM3_IRQ (void)
 {
 	uint16_t now = TIM_Read(TIM_RADIO);
 	uint16_t pulse = 0;
-	static uint16_t tick;
+	static uint16_t tick = 0;
 
 	if (GPIO_Read(PWM_S3_GPIO, PWM_S3_PIN))
 	{
@@ -156,19 +236,19 @@ void RADIO_PWM3_IRQ (void)
 		pulse = now - tick;
 
 		// Check pulse is valid
-		if (pulse <= (PWM_MAX + PWM_THRESH) && pulse >= (PWM_MIN - PWM_THRESH))
+		if (pulse <= (PWM_MAX + PWM_THRESHOLD) && pulse >= (PWM_MIN - PWM_THRESHOLD))
 		{
-			rx[2] = pulse;
-			rxHeartbeat = CORE_GetTick();
+			rx[0][2] = pulse;
+			rxHeartbeat[2] = CORE_GetTick();
 		}
 	}
 }
 
-void RADIO_PWM4_IRQ (void)
+void PWM4_IRQ (void)
 {
 	uint16_t now = TIM_Read(TIM_RADIO);
 	uint16_t pulse = 0;
-	static uint16_t tick;
+	static uint16_t tick = 0;
 
 	if (GPIO_Read(PWM_S4_GPIO, PWM_S4_PIN))
 	{
@@ -179,10 +259,10 @@ void RADIO_PWM4_IRQ (void)
 		pulse = now - tick;
 
 		// Check pulse is valid
-		if (pulse <= (PWM_MAX + PWM_THRESH) && pulse >= (PWM_MIN - PWM_THRESH))
+		if (pulse <= (PWM_MAX + PWM_THRESHOLD) && pulse >= (PWM_MIN - PWM_THRESHOLD))
 		{
-			rx[3] = pulse;
-			rxHeartbeat = CORE_GetTick();
+			rx[0][3] = pulse;
+			rxHeartbeat[3] = CORE_GetTick();
 		}
 	}
 }
