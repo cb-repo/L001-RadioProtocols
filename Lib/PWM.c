@@ -31,10 +31,10 @@ void PWM4_IRQ (void);
  * PRIVATE VARIABLES
  */
 
-volatile uint16_t rx[PWM_JITTER_ARRAY][PWM_NUM_CHANNELS] = {0};
-volatile bool rxHeartbeat[PWM_NUM_CHANNELS] = {0};
+volatile uint16_t rxPWM[PWM_JITTER_ARRAY][PWM_NUM_CHANNELS] = {0};
+volatile bool rxHeartbeatPWM[PWM_NUM_CHANNELS] = {0};
 PWM_Properties pwm = {0};
-PWM_Data data = {0};
+PWM_Data dataPWM = {0};
 
 /*
  * PUBLIC FUNCTIONS
@@ -56,7 +56,7 @@ bool PWM_Detect(PWM_Properties p)
 	bool retVal = false;
 	for (uint8_t i = 0; i < PWM_NUM_CHANNELS; i++)
 	{
-		retVal = retVal || rxHeartbeat[i];
+		retVal = retVal || rxHeartbeatPWM[i];
 	}
 	return retVal;
 }
@@ -96,7 +96,7 @@ void PWM_Update (void)
 	static uint32_t prev = 0;
 
 	// Check for New Input Data
-	if (rxHeartbeat[0] || rxHeartbeat [1] || rxHeartbeat [2] || rxHeartbeat [3])
+	if (rxHeartbeatPWM[0] || rxHeartbeatPWM [1] || rxHeartbeatPWM [2] || rxHeartbeatPWM [3])
 	{
 		// Average and Assign Input to data Struct
 		for (uint8_t j = 0; j < PWM_NUM_CHANNELS; j++)
@@ -105,7 +105,7 @@ void PWM_Update (void)
 			uint32_t ch = 0;
 			for (uint8_t i = 0; i < PWM_JITTER_ARRAY; i++)
 			{
-				uint16_t trunc = PWM_Truncate(rx[i][j]);
+				uint16_t trunc = PWM_Truncate(rxPWM[i][j]);
 				if (trunc != 0)
 				{
 					ch += trunc;
@@ -113,27 +113,27 @@ void PWM_Update (void)
 				}
 			}
 			ch /= avg;
-			data.ch[j] = ch;
+			dataPWM.ch[j] = ch;
 		}
-		rxHeartbeat[0] = false;
-		rxHeartbeat[1] = false;
-		rxHeartbeat[2] = false;
-		rxHeartbeat[3] = false;
+		rxHeartbeatPWM[0] = false;
+		rxHeartbeatPWM[1] = false;
+		rxHeartbeatPWM[2] = false;
+		rxHeartbeatPWM[3] = false;
 		prev = now;
 	}
 
 	// Check for Input Failsafe
 	if (PWM_TIMEOUT <= (now - prev)) {
-		data.failsafe = true;
+		dataPWM.inputLost = true;
 		PWM_memset();
 	} else {
-		data.failsafe = false;
+		dataPWM.inputLost = false;
 	}
 }
 
 PWM_Data* PWM_GetDataPtr (void)
 {
-	return &data;
+	return &dataPWM;
 }
 
 /*
@@ -167,7 +167,7 @@ void PWM_memset (void)
 	{
 		for (uint8_t i = 0; i < PWM_JITTER_ARRAY; i++)
 		{
-			rx[i][j] = 0;
+			rxPWM[i][j] = 0;
 		}
 	}
 }
@@ -192,8 +192,8 @@ void PWM1_IRQ (void)
 		// Check pulse is valid
 		if (pulse <= (PWM_MAX + PWM_THRESHOLD) && pulse >= (PWM_MIN - PWM_THRESHOLD))
 		{
-			rx[0][0] = pulse;
-			rxHeartbeat[0] = CORE_GetTick();
+			rxPWM[0][0] = pulse;
+			rxHeartbeatPWM[0] = CORE_GetTick();
 		}
 	}
 }
@@ -215,8 +215,8 @@ void PWM2_IRQ (void)
 		// Check pulse is valid
 		if (pulse <= (PWM_MAX + PWM_THRESHOLD) && pulse >= (PWM_MIN - PWM_THRESHOLD))
 		{
-			rx[0][1] = pulse;
-			rxHeartbeat[1] = CORE_GetTick();
+			rxPWM[0][1] = pulse;
+			rxHeartbeatPWM[1] = CORE_GetTick();
 		}
 	}
 }
@@ -238,8 +238,8 @@ void PWM3_IRQ (void)
 		// Check pulse is valid
 		if (pulse <= (PWM_MAX + PWM_THRESHOLD) && pulse >= (PWM_MIN - PWM_THRESHOLD))
 		{
-			rx[0][2] = pulse;
-			rxHeartbeat[2] = CORE_GetTick();
+			rxPWM[0][2] = pulse;
+			rxHeartbeatPWM[2] = CORE_GetTick();
 		}
 	}
 }
@@ -261,8 +261,8 @@ void PWM4_IRQ (void)
 		// Check pulse is valid
 		if (pulse <= (PWM_MAX + PWM_THRESHOLD) && pulse >= (PWM_MIN - PWM_THRESHOLD))
 		{
-			rx[0][3] = pulse;
-			rxHeartbeat[3] = CORE_GetTick();
+			rxPWM[0][3] = pulse;
+			rxHeartbeatPWM[3] = CORE_GetTick();
 		}
 	}
 }

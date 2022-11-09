@@ -47,10 +47,10 @@ void SBUS_HandleUART (void);
  * PRIVATE VARIABLES
  */
 
-uint8_t rx[SBUS_JITTER_ARRAY][SBUS_PAYLOAD_LEN] = {0};
-bool rxHeartbeat = false;
+uint8_t rxSBUS[SBUS_JITTER_ARRAY][SBUS_PAYLOAD_LEN] = {0};
+bool rxHeartbeatSBUS = false;
 SBUS_Properties sbus = {0};
-SBUS_Data data = {0};
+SBUS_Data dataSBUS = {0};
 
 /*
  * PUBLIC FUNCTIONS
@@ -69,12 +69,12 @@ bool SBUS_Detect(SBUS_Properties s)
 
 	SBUS_Deinit();
 
-	return rxHeartbeat;
+	return rxHeartbeatSBUS;
 }
 
 void SBUS_Init (SBUS_Properties s)
 {
-	memset(rx, 0, sizeof(rx));
+	memset(rxSBUS, 0, sizeof(rxSBUS));
 
 	sbus = s;
 	UART_Init(sbus.UART, sbus.Baud, UART_Mode_Inverted);
@@ -95,37 +95,24 @@ void SBUS_Update (void)
 	static uint32_t prev = 0;
 
 	// Check for New Input Data
-	if (rxHeartbeat)
+	if (rxHeartbeatSBUS)
 	{
 		SBUS_JitterAverage();
-		rxHeartbeat = false;
+		rxHeartbeatSBUS = false;
 		prev = now;
 	}
 
 	// Check for Input Failsafe
 	if (SBUS_TIMEOUT <= (now - prev)) {
-		data.failsafe = true;
-		memset(rx, 0, sizeof(rx));
+		dataSBUS.inputLost = true;
+		memset(rxSBUS, 0, sizeof(rxSBUS));
 	} else {
-		bool failsafe = false;
-		for (uint8_t i = 0; i < SBUS_JITTER_ARRAY; i++) {
-			if ((rx[i][23] & SBUS_FAILSAFE_MASK)) {
-				failsafe = true;
-				break;
-			}
-		}
-		if (failsafe) { data.failsafe = true;}
-		else { data.failsafe = false; }
+		dataSBUS.inputLost = false;
 	}
+
 
 	for (uint8_t i = 0; i < SBUS_JITTER_ARRAY; i++)
 	{
-		if ((rx[i][23] & SBUS_LOSTFRAME_MASK))
-		{
-			data.lost_frame = true;
-			break;
-		}
-
 
 	}
 
@@ -133,7 +120,7 @@ void SBUS_Update (void)
 
 SBUS_Data* SBUS_GetDataPtr (void)
 {
-	return &data;
+	return &dataSBUS;
 }
 
 /*
@@ -169,7 +156,7 @@ void SBUS_JitterAverage(void)
 		uint32_t ch = 0;
 		for (uint8_t i = 0; i < SBUS_JITTER_ARRAY; i++)
 		{
-			uint16_t trunc = (int16_t)( (rx[i][1 + (l*11)] | rx[i][2 + (l*11)] << 8 ) & 0x07FF);
+			uint16_t trunc = (int16_t)( (rxSBUS[i][1 + (l*11)] | rxSBUS[i][2 + (l*11)] << 8 ) & 0x07FF);
 			trunc = SBUS_Truncate(trunc);
 			if (trunc != 0)
 			{
@@ -178,13 +165,13 @@ void SBUS_JitterAverage(void)
 			}
 		}
 		ch /= avg;
-		data.ch[0 + (l*8)] = ch;
+		dataSBUS.ch[0 + (l*8)] = ch;
 
 		avg = 0;
 		ch = 0;
 		for (uint8_t i = 0; i < SBUS_JITTER_ARRAY; i++)
 		{
-			uint16_t trunc = (int16_t)( (rx[i][2 + (l*11)] >> 3 | rx[i][3 + (l*11)] << 5 ) & 0x07FF);
+			uint16_t trunc = (int16_t)( (rxSBUS[i][2 + (l*11)] >> 3 | rxSBUS[i][3 + (l*11)] << 5 ) & 0x07FF);
 			trunc = SBUS_Truncate(trunc);
 			if (trunc != 0)
 			{
@@ -193,13 +180,13 @@ void SBUS_JitterAverage(void)
 			}
 		}
 		ch /= avg;
-		data.ch[1 + (l*8)] = ch;
+		dataSBUS.ch[1 + (l*8)] = ch;
 
 		avg = 0;
 		ch = 0;
 		for (uint8_t i = 0; i < SBUS_JITTER_ARRAY; i++)
 		{
-			uint16_t trunc = (int16_t)( (rx[i][3 + (l*11)] >> 6 | rx[i][4 + (l*11)] << 2  | rx[i][5 + (l*11)] << 10 ) & 0x07FF);
+			uint16_t trunc = (int16_t)( (rxSBUS[i][3 + (l*11)] >> 6 | rxSBUS[i][4 + (l*11)] << 2  | rxSBUS[i][5 + (l*11)] << 10 ) & 0x07FF);
 			trunc = SBUS_Truncate(trunc);
 			if (trunc != 0)
 			{
@@ -208,13 +195,13 @@ void SBUS_JitterAverage(void)
 			}
 		}
 		ch /= avg;
-		data.ch[2 + (l*8)] = ch;
+		dataSBUS.ch[2 + (l*8)] = ch;
 
 		avg = 0;
 		ch = 0;
 		for (uint8_t i = 0; i < SBUS_JITTER_ARRAY; i++)
 		{
-			uint16_t trunc = (int16_t)( (rx[i][5 + (l*11)] >> 1 | rx[i][6 + (l*11)] << 7 ) & 0x07FF);
+			uint16_t trunc = (int16_t)( (rxSBUS[i][5 + (l*11)] >> 1 | rxSBUS[i][6 + (l*11)] << 7 ) & 0x07FF);
 			trunc = SBUS_Truncate(trunc);
 			if (trunc != 0)
 			{
@@ -223,13 +210,13 @@ void SBUS_JitterAverage(void)
 			}
 		}
 		ch /= avg;
-		data.ch[3 + (l*8)] = ch;
+		dataSBUS.ch[3 + (l*8)] = ch;
 
 		avg = 0;
 		ch = 0;
 		for (uint8_t i = 0; i < SBUS_JITTER_ARRAY; i++)
 		{
-			uint16_t trunc = (int16_t)( (rx[i][6 + (l*11)] >> 4 | rx[i][7 + (l*11)] << 4 ) & 0x07FF);
+			uint16_t trunc = (int16_t)( (rxSBUS[i][6 + (l*11)] >> 4 | rxSBUS[i][7 + (l*11)] << 4 ) & 0x07FF);
 			trunc = SBUS_Truncate(trunc);
 			if (trunc != 0)
 			{
@@ -238,13 +225,13 @@ void SBUS_JitterAverage(void)
 			}
 		}
 		ch /= avg;
-		data.ch[4 + (l*8)] = ch;
+		dataSBUS.ch[4 + (l*8)] = ch;
 
 		avg = 0;
 		ch = 0;
 		for (uint8_t i = 0; i < SBUS_JITTER_ARRAY; i++)
 		{
-			uint16_t trunc = (int16_t)( (rx[i][7 + (l*11)] >> 7 | rx[i][8 + (l*11)] << 1 | rx[i][9 + (l*11)] << 9 ) & 0x07FF);
+			uint16_t trunc = (int16_t)( (rxSBUS[i][7 + (l*11)] >> 7 | rxSBUS[i][8 + (l*11)] << 1 | rxSBUS[i][9 + (l*11)] << 9 ) & 0x07FF);
 			trunc = SBUS_Truncate(trunc);
 			if (trunc != 0)
 			{
@@ -253,13 +240,13 @@ void SBUS_JitterAverage(void)
 			}
 		}
 		ch /= avg;
-		data.ch[5 + (l*8)] = ch;
+		dataSBUS.ch[5 + (l*8)] = ch;
 
 		avg = 0;
 		ch = 0;
 		for (uint8_t i = 0; i < SBUS_JITTER_ARRAY; i++)
 		{
-			uint16_t trunc = (int16_t)( (rx[i][9 + (l*11)] >> 2 | rx[i][10 + (l*11)] << 6 ) & 0x07FF);
+			uint16_t trunc = (int16_t)( (rxSBUS[i][9 + (l*11)] >> 2 | rxSBUS[i][10 + (l*11)] << 6 ) & 0x07FF);
 			trunc = SBUS_Truncate(trunc);
 			if (trunc != 0)
 			{
@@ -268,13 +255,13 @@ void SBUS_JitterAverage(void)
 			}
 		}
 		ch /= avg;
-		data.ch[6 + (l*8)] = ch;
+		dataSBUS.ch[6 + (l*8)] = ch;
 
 		avg = 0;
 		ch = 0;
 		for (uint8_t i = 0; i < SBUS_JITTER_ARRAY; i++)
 		{
-			uint16_t trunc = (int16_t)( (rx[i][10 + (l*11)] >> 5 | rx[i][11 + (l*11)] << 3 ) & 0x07FF);
+			uint16_t trunc = (int16_t)( (rxSBUS[i][10 + (l*11)] >> 5 | rxSBUS[i][11 + (l*11)] << 3 ) & 0x07FF);
 			trunc = SBUS_Truncate(trunc);
 			if (trunc != 0)
 			{
@@ -283,18 +270,41 @@ void SBUS_JitterAverage(void)
 			}
 		}
 		ch /= avg;
-		data.ch[7 + (l*8)] = ch;
+		dataSBUS.ch[7 + (l*8)] = ch;
 	}
 
 	uint8_t ch17 = 0;
 	uint8_t ch18 = 0;
+	uint8_t fs = 0;
+	uint8_t lf = 0;
 	for (uint8_t i = 0; i < SBUS_JITTER_ARRAY; i++)
 	{
-		ch17 += rx[i][23] & SBUS_CH17_MASK;
-		ch18 += rx[i][23] & SBUS_CH18_MASK;
+		ch17 += rxSBUS[i][23] & SBUS_CH17_MASK;
+		ch18 += rxSBUS[i][23] & SBUS_CH18_MASK;
+		fs += rxSBUS[i][23] & SBUS_FAILSAFE_MASK;
+		lf += rxSBUS[i][23] & SBUS_LOSTFRAME_MASK;
 	}
-	if ( ch17 > (SBUS_JITTER_ARRAY / 2) ) { data.ch17 = true; }
-	if ( ch18 > (SBUS_JITTER_ARRAY / 2) ) { data.ch18 = true; }
+	if ( ch17 > (SBUS_JITTER_ARRAY / 2) ) {
+		dataSBUS.ch17 = true;
+	} else {
+		dataSBUS.ch17 = false;
+	}
+	if ( ch18 > (SBUS_JITTER_ARRAY / 2) ) {
+		dataSBUS.ch18 = true;
+	} else {
+		dataSBUS.ch18 = false;
+	}
+	if ( fs > 0 ) {
+		dataSBUS.failsafe = true;
+	} else {
+		dataSBUS.failsafe = false;
+	}
+	if ( lf > 0 ) {
+		dataSBUS.frameLost = true;
+	} else {
+		dataSBUS.frameLost = false;
+	}
+
 }
 
 
@@ -304,15 +314,15 @@ void SBUS_HandleUART (void)
 
 	while (UART_ReadCount(sbus.UART) >= SBUS_PAYLOAD_LEN)
 	{
-		UART_Read(sbus.UART, &rx[jitter][SBUS_HEADER_INDEX], SBUS_HEADER_LEN);
-		if (rx[jitter][SBUS_HEADER_INDEX] == SBUS_HEADER)
+		UART_Read(sbus.UART, &rxSBUS[jitter][SBUS_HEADER_INDEX], SBUS_HEADER_LEN);
+		if (rxSBUS[jitter][SBUS_HEADER_INDEX] == SBUS_HEADER)
 		{
-			// Read and Decode Channel Data
-			UART_Read(sbus.UART, &rx[jitter][SBUS_DATA_INDEX], (SBUS_PAYLOAD_LEN - SBUS_HEADER_LEN));
+			// Read and Decode Channel dataSBUS
+			UART_Read(sbus.UART, &rxSBUS[jitter][SBUS_DATA_INDEX], (SBUS_PAYLOAD_LEN - SBUS_HEADER_LEN));
 			// Verify the Message Validity
-			if (rx[jitter][SBUS_FOOTER_INDEX] == SBUS_FOOTER) {
+			if (rxSBUS[jitter][SBUS_FOOTER_INDEX] == SBUS_FOOTER) {
 				// Kick Heartbeat
-				rxHeartbeat = true;
+				rxHeartbeatSBUS = true;
 				//Increment Jitter Array Index
 				jitter += 1;
 				if (jitter >= SBUS_JITTER_ARRAY) { jitter = 0; }

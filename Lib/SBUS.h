@@ -31,13 +31,14 @@
 
 typedef struct {
 	GPIO_t * GPIO;
-	uint8_t Pin;
+	uint32_t Pin;
 	UART_t * UART;
 	uint32_t Baud;
 } SBUS_Properties;
 
 typedef struct {
-	bool lost_frame;
+	bool inputLost;
+	bool frameLost;
 	bool failsafe;
 	bool ch17;
 	bool ch18;

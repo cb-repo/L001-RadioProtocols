@@ -27,12 +27,12 @@
 
 typedef struct {
 	GPIO_t * GPIO;
-	uint8_t Pin;
+	uint32_t Pin;
 	UART_t * UART;
 } IBUS_Properties;
 
 typedef struct {
-	bool failsafe;
+	bool inputLost;
 	int16_t ch[IBUS_NUM_CHANNELS];
 } IBUS_Data;
 

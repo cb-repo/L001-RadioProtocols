@@ -25,14 +25,14 @@
 
 typedef struct {
 	GPIO_t * GPIO;
-	uint8_t Pin;
+	uint32_t Pin;
 	TIM_t * Timer;
 	uint32_t Tim_Freq;
 	uint32_t Tim_Reload;
 } PPM_Properties;
 
 typedef struct {
-	bool failsafe;
+	bool inputLost;
 	int16_t ch[PPM_NUM_CHANNELS];
 } PPM_Data;
 

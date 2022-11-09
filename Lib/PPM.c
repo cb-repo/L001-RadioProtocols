@@ -28,10 +28,10 @@ void PPM_IRQ (void);
  * PRIVATE VARIABLES
  */
 
-volatile uint16_t rx[PPM_JITTER_ARRAY][PPM_NUM_CHANNELS] = {0};
-volatile bool rxHeartbeat = false;
+volatile uint16_t rxPPM[PPM_JITTER_ARRAY][PPM_NUM_CHANNELS] = {0};
+volatile bool rxHeartbeatPPM = false;
 PPM_Properties ppm = {0};
-PPM_Data data = {0};
+PPM_Data dataPPM = {0};
 
 /*
  * PUBLIC FUNCTIONS
@@ -49,7 +49,7 @@ bool PPM_Detect (PPM_Properties p)
 
 	PPM_Deinit();
 
-	return rxHeartbeat;
+	return rxHeartbeatPPM;
 }
 
 void PPM_Init (PPM_Properties p)
@@ -78,7 +78,7 @@ void PPM_Update (void)
 	static uint32_t prev = 0;
 
 	// Check for New Input Data
-	if (rxHeartbeat)
+	if (rxHeartbeatPPM)
 	{
 		// Average and Assign Input to data Struct
 		for (uint8_t j = 0; j < PPM_NUM_CHANNELS; j++)
@@ -87,7 +87,7 @@ void PPM_Update (void)
 			uint32_t ch = 0;
 			for (uint8_t i = 0; i < PPM_JITTER_ARRAY; i++)
 			{
-				uint16_t trunc = PPM_Truncate(rx[i][j]);
+				uint16_t trunc = PPM_Truncate(rxPPM[i][j]);
 				if (trunc != 0)
 				{
 					ch += trunc;
@@ -95,24 +95,24 @@ void PPM_Update (void)
 				}
 			}
 			ch /= avg;
-			data.ch[j] = ch;
+			dataPPM.ch[j] = ch;
 		}
-		rxHeartbeat = false;
+		rxHeartbeatPPM = false;
 		prev = now;
 	}
 
 	// Check for Input Failsafe
 	if (PPM_TIMEOUT <= (now - prev)) {
-		data.failsafe = true;
+		dataPPM.inputLost = true;
 		PPM_memset();
 	} else {
-		data.failsafe = false;
+		dataPPM.inputLost = false;
 	}
 }
 
 PPM_Data* PPM_GetDataPtr (void)
 {
-	return &data;
+	return &dataPPM;
 }
 
 /*
@@ -146,7 +146,7 @@ void PPM_memset (void)
 	{
 		for (uint8_t i = 0; i < PPM_JITTER_ARRAY; i++)
 		{
-			rx[i][j] = 0;
+			rxPPM[i][j] = 0;
 		}
 	}
 }
@@ -177,7 +177,7 @@ void PPM_IRQ (void)
 	if (ch < PPM_NUM_CHANNELS)
 	{
 		// Assign Pulse to Correct Channel
-		rx[jitter][ch] = pulse;
+		rxPPM[jitter][ch] = pulse;
 		// Prep Variables for Next Loop
 		prev = now;
 		ch += 1;
@@ -185,7 +185,7 @@ void PPM_IRQ (void)
 		if (ch == (PPM_NUM_CHANNELS - 1))
 		{
 			// Kick Heartbeat
-			rxHeartbeat = true;
+			rxHeartbeatPPM = true;
 			//Increment Jitter Array Index
 			jitter += 1;
 			if (jitter >= PPM_JITTER_ARRAY) { jitter = 0; }

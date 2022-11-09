@@ -25,14 +25,14 @@
 
 typedef struct {
 	GPIO_t * GPIO[PWM_NUM_CHANNELS];
-	uint8_t Pin[PWM_NUM_CHANNELS];
+	uint32_t Pin[PWM_NUM_CHANNELS];
 	TIM_t * Timer;
 	uint32_t Tim_Freq;
 	uint32_t Tim_Reload;
 } PWM_Properties;
 
 typedef struct {
-	bool failsafe;
+	bool inputLost;
 	int16_t ch[PWM_NUM_CHANNELS];
 } PWM_Data;
 
