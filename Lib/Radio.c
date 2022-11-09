@@ -23,12 +23,13 @@
 
 RADIO_Properties radio = {0};
 RADIO_Data data = {0};
+RADIO_ptrProtocolData ptrData;
 
 /*
  * PUBLIC FUNCTIONS
  */
 
-RADIO_Properties RADIO_Detect (RADIO_Properties r)
+void RADIO_Detect (RADIO_Properties * r)
 {
 	PWM_Deinit();
 	PPM_Deinit();
@@ -41,57 +42,53 @@ RADIO_Properties RADIO_Detect (RADIO_Properties r)
 		uint32_t now = CORE_GetTick();
 
 		PPM_Properties ppm = {0};
-		ppm.GPIO = r.GPIO_UART;
-		ppm.Pin = r.Pin_UART;
-		ppm.Timer = r.Timer;
-		ppm.Tim_Freq = r.TimerFreq;
-		ppm.Tim_Reload = r.TimerFreq;
+		ppm.GPIO = r->GPIO_UART;
+		ppm.Pin = r->Pin_UART;
+		ppm.Timer = r->Timer;
+		ppm.Tim_Freq = r->TimerFreq;
+		ppm.Tim_Reload = r->TimerFreq;
 		if (PPM_Detect(ppm))
 		{
-			r.Protocol = PPM;
-			r.prtData.ptrDataPPM = PPM_GetDataPtr();
+			r->Protocol = PPM;
 			break;
 		}
 
 		SBUS_Properties sbus = {0};
-		sbus.GPIO = r.GPIO_UART;
-		sbus.Pin = r.Pin_UART;
-		sbus.UART = r.UART;
-		sbus.Baud = r.Baud_SBUS;
+		sbus.GPIO = r->GPIO_UART;
+		sbus.Pin = r->Pin_UART;
+		sbus.UART = r->UART;
+		sbus.Baud = r->Baud_SBUS;
 		if (SBUS_Detect(sbus))
 		{
-			r.Protocol = SBUS;
-			r.prtData.ptrDataSBUS = SBUS_GetDataPtr();
+			r->Protocol = SBUS;
 			break;
 		}
 
 		IBUS_Properties ibus = {0};
-		ibus.GPIO = r.GPIO_UART;
-		ibus.Pin = r.Pin_UART;
-		ibus.UART = r.UART;
+		ibus.GPIO = r->GPIO_UART;
+		ibus.Pin = r->Pin_UART;
+		ibus.UART = r->UART;
 		if (IBUS_Detect(ibus))
 		{
-			r.Protocol = IBUS;
-			r.prtData.ptrDataIBUS = IBUS_GetDataPtr();
+			r->Protocol = IBUS;
 			break;
 		}
 
 		PWM_Properties pwm = {0};
-		memcpy(pwm.GPIO, r.GPIO_PWM, sizeof(pwm.GPIO));
-		memcpy(pwm.Pin, r.Pin_PWM, sizeof(pwm.Pin));
-		pwm.Timer = r.Timer;
-		pwm.Tim_Freq = r.TimerFreq;
-		pwm.Tim_Reload = r.TimerReload;
+		memcpy(pwm.GPIO, r->GPIO_PWM, sizeof(pwm.GPIO));
+		memcpy(pwm.Pin, r->Pin_PWM, sizeof(pwm.Pin));
+		pwm.Timer = r->Timer;
+		pwm.Tim_Freq = r->TimerFreq;
+		pwm.Tim_Reload = r->TimerReload;
 		if (PWM_Detect(pwm))
 		{
-			r.Protocol = PWM;
-			r.prtData.ptrDataPWM = PWM_GetDataPtr();
+			r->Protocol = PWM;
 			break;
 		}
 
 		if ( RADIO_DETECT_TIMEOUT <= (now - tick))
 		{
-			r.Protocol = PWM;
+			r->Protocol = PWM;
 			break;
 		}
 
@@ -101,12 +98,12 @@ RADIO_Properties RADIO_Detect (RADIO_Properties r)
 		}
 	}
 
-	return r;
+	r->ptrDataRadio = &data;
 }
 
-void RADIO_Init (RADIO_Properties r)
+void RADIO_Init (RADIO_Properties *r)
 {
-	radio = r;
+	radio = *r;
 
 	if (radio.Protocol == PPM)
 	{
@@ -118,6 +115,7 @@ void RADIO_Init (RADIO_Properties r)
 		ppm.Tim_Freq = radio.TimerFreq;
 		ppm.Tim_Reload = radio.TimerFreq;
 		PPM_Init(ppm);
+		ptrData.ptrDataPPM = PPM_GetDataPtr();
 	}
 	else if (radio.Protocol == SBUS)
 	{
@@ -128,6 +126,7 @@ void RADIO_Init (RADIO_Properties r)
 		sbus.UART = radio.UART;
 		sbus.Baud = radio.Baud_SBUS;
 		SBUS_Init(sbus);
+		ptrData.ptrDataSBUS = SBUS_GetDataPtr();
 	}
 	else if (radio.Protocol == IBUS)
 	{
@@ -137,6 +136,7 @@ void RADIO_Init (RADIO_Properties r)
 		ibus.Pin = radio.Pin_UART;
 		ibus.UART = radio.UART;
 		IBUS_Init(ibus);
+		ptrData.ptrDataIBUS = IBUS_GetDataPtr();
 	}
 	else // radio.Protocol == PWM
 	{
@@ -148,6 +148,7 @@ void RADIO_Init (RADIO_Properties r)
 		pwm.Tim_Freq = radio.TimerFreq;
 		pwm.Tim_Reload = radio.TimerReload;
 		PWM_Init(pwm);
+		ptrData.ptrDataPWM = PWM_GetDataPtr();
 	}
 }
 
@@ -157,31 +158,31 @@ void RADIO_Update (void)
 
 	case PWM:
 		PWM_Update();
-		data.failsafe = radio.prtData.ptrDataPWM->failsafe;
-		memcpy(data.ch, radio.prtData.ptrDataPWM->ch, sizeof(radio.prtData.ptrDataPWM->ch));
+		data.inputLost = ptrData.ptrDataPWM->inputLost;
+		memcpy(data.ch, ptrData.ptrDataPWM->ch, sizeof(ptrData.ptrDataPWM->ch));
 		break;
 
 	case PPM:
 		PPM_Update();
-		data.failsafe = radio.prtData.ptrDataPPM->failsafe;
-		memcpy(data.ch, radio.prtData.ptrDataPPM->ch, sizeof(radio.prtData.ptrDataPPM->ch));
+		data.inputLost = ptrData.ptrDataPPM->inputLost;
+		memcpy(data.ch, ptrData.ptrDataPPM->ch, sizeof(ptrData.ptrDataPPM->ch));
 		break;
 
 	case IBUS:
 		IBUS_Update();
-		data.failsafe = radio.prtData.ptrDataIBUS->failsafe;
-		memcpy(data.ch, radio.prtData.ptrDataIBUS->ch, sizeof(radio.prtData.ptrDataIBUS->ch));
+		data.inputLost = ptrData.ptrDataIBUS->inputLost;
+		memcpy(data.ch, ptrData.ptrDataIBUS->ch, sizeof(ptrData.ptrDataIBUS->ch));
 		break;
 
 	case SBUS:
 		SBUS_Update();
-		data.failsafe = radio.prtData.ptrDataSBUS->failsafe;
-		memcpy(data.ch, radio.prtData.ptrDataSBUS->ch, sizeof(radio.prtData.ptrDataSBUS->ch));
+		data.inputLost = ptrData.ptrDataSBUS->inputLost;
+		memcpy(data.ch, ptrData.ptrDataSBUS->ch, sizeof(ptrData.ptrDataSBUS->ch));
 		break;
 
 	default:
 		radio.Protocol = PWM;
-		radio.prtData.ptrDataPWM = PWM_GetDataPtr();
+		ptrData.ptrDataPWM = PWM_GetDataPtr();
 		break;
 	}
 }

@@ -21,6 +21,7 @@
 #define RADIO_MIN		1000
 #define RADIO_CENTER	1500
 #define RADIO_MAX		2000
+#define RADIO_HALFSCALE	(RADIO_MAX - RADIO_CENTER)
 
 /*
  * PUBLIC TYPES
@@ -33,12 +34,11 @@ typedef enum {
 	PWM,
 } RADIO_Protocols;
 
-//typedef union {
-//	PWM_Properties pwm;
-//	PPM_Properties ppm;
-//	IBUS_Properties ibus;
-//	SBUS_Properties sbus;
-//} RADIO_ProtocolProperties;
+typedef struct {
+	bool inputLost;
+	uint8_t ch_num;
+	int16_t ch[RADIO_NUM_CHANNELS];
+} RADIO_Data;
 
 typedef union {
 	PWM_Data* ptrDataPWM;
@@ -49,30 +49,25 @@ typedef union {
 
 typedef struct {
 	GPIO_t * GPIO_PWM[PWM_NUM_CHANNELS];
-	uint8_t Pin_PWM[PWM_NUM_CHANNELS];
+	uint32_t Pin_PWM[PWM_NUM_CHANNELS];
 	UART_t * UART;
 	uint32_t Baud_SBUS;
 	GPIO_t * GPIO_UART;
-	uint8_t Pin_UART;
+	uint32_t Pin_UART;
 	TIM_t * Timer;
 	uint32_t TimerFreq;
 	uint32_t TimerReload;
 	RADIO_Protocols Protocol;
-	RADIO_ptrProtocolData prtData;
+	RADIO_Data * ptrDataRadio;
 } RADIO_Properties;
 
-typedef struct {
-	bool failsafe;
-	uint8_t ch_num;
-	int16_t ch[RADIO_NUM_CHANNELS];
-} RADIO_Data;
 
 /*
  * PUBLIC FUNCTIONS
  */
 
-RADIO_Properties RADIO_Detect (RADIO_Properties);
-void RADIO_Init (RADIO_Properties);
+void RADIO_Detect (RADIO_Properties *);
+void RADIO_Init (RADIO_Properties *);
 void RADIO_Update (void);
 RADIO_Data* RADIO_GetDataPtr (void);
 
