@@ -24,17 +24,15 @@
 #define SBUS_MIN				172
 #define SBUS_CENTER				991
 #define SBUS_MAX				1811
+#define SBUS_RANGE				(SBUS_MAX - SBUS_MIN)
+
+#define SBUS_MAP_MIN			1000
+#define SBUS_MAP_MAX			2000
+#define SBUS_MAP_RANGE			(SBUS_MAP_MAX - SBUS_MAP_MIN)
 
 /*
  * PUBLIC TYPES
  */
-
-typedef struct {
-	GPIO_t * GPIO;
-	uint32_t Pin;
-	UART_t * UART;
-	uint32_t Baud;
-} SBUS_Properties;
 
 typedef struct {
 	bool inputLost;
@@ -49,8 +47,8 @@ typedef struct {
  * PUBLIC FUNCTIONS
  */
 
-bool SBUS_Detect (SBUS_Properties);
-void SBUS_Init (SBUS_Properties);
+bool SBUS_Detect (uint32_t);
+void SBUS_Init (uint32_t);
 void SBUS_Deinit (void);
 void SBUS_Update (void);
 SBUS_Data* SBUS_GetDataPtr (void);

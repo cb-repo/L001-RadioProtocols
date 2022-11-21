@@ -26,12 +26,6 @@
  */
 
 typedef struct {
-	GPIO_t * GPIO;
-	uint32_t Pin;
-	UART_t * UART;
-} IBUS_Properties;
-
-typedef struct {
 	bool inputLost;
 	int16_t ch[IBUS_NUM_CHANNELS];
 } IBUS_Data;
@@ -40,8 +34,8 @@ typedef struct {
  * PUBLIC FUNCTIONS
  */
 
-bool IBUS_Detect(IBUS_Properties);
-void IBUS_Init (IBUS_Properties);
+bool IBUS_Detect(void);
+void IBUS_Init (void);
 void IBUS_Deinit (void);
 void IBUS_Update (void);
 IBUS_Data* IBUS_GetDataPtr (void);

@@ -44,16 +44,15 @@ void IBUS_HandleUART (void);
 
 uint8_t rxIBUS[IBUS_JITTER_ARRAY][IBUS_PAYLOAD_LEN] = {0};
 bool rxHeartbeatIBUS = false;
-IBUS_Properties ibus = {0};
 IBUS_Data dataIBUS = {0};
 
 /*
  * PUBLIC FUNCTIONS
  */
 
-bool IBUS_Detect(IBUS_Properties i)
+bool IBUS_Detect(void)
 {
-	IBUS_Init(i);
+	IBUS_Init();
 
 	uint32_t tick = CORE_GetTick();
 	while ((IBUS_TIMEOUT * 2) > CORE_GetTick() - tick)
@@ -67,17 +66,16 @@ bool IBUS_Detect(IBUS_Properties i)
 	return rxHeartbeatIBUS;
 }
 
-void IBUS_Init (IBUS_Properties i)
+void IBUS_Init (void)
 {
 	memset(rxIBUS, 0, sizeof(rxIBUS));
 
-	ibus = i;
-	UART_Init(ibus.UART, IBUS_BAUD, UART_Mode_Default);
+	UART_Init(IBUS_UART, IBUS_BAUD, UART_Mode_Default);
 }
 
 void IBUS_Deinit (void)
 {
-	UART_Deinit(ibus.UART);
+	UART_Deinit(IBUS_UART);
 }
 
 void IBUS_Update (void)
@@ -173,16 +171,16 @@ void IBUS_HandleUART (void)
 {
 	static uint8_t jitter = 0;			// Jitter-Smoothing Array Index
 
-	while (UART_ReadCount(ibus.UART) >= IBUS_PAYLOAD_LEN)
+	while (UART_ReadCount(IBUS_UART) >= IBUS_PAYLOAD_LEN)
 	{
-		UART_Read(ibus.UART, &rxIBUS[jitter][IBUS_HEADER1_INDEX], IBUS_HEADER1_LEN);
+		UART_Read(IBUS_UART, &rxIBUS[jitter][IBUS_HEADER1_INDEX], IBUS_HEADER1_LEN);
 		if (rxIBUS[jitter][IBUS_HEADER1_INDEX] == IBUS_HEADER1)
 		{
-			UART_Read(ibus.UART, &rxIBUS[jitter][IBUS_HEADER2_INDEX], IBUS_HEADER2_LEN);
+			UART_Read(IBUS_UART, &rxIBUS[jitter][IBUS_HEADER2_INDEX], IBUS_HEADER2_LEN);
 			if (rxIBUS[jitter][IBUS_HEADER2_INDEX] == IBUS_HEADER2)
 			{
 				// Read Channel Data
-				UART_Read(ibus.UART, &rxIBUS[jitter][IBUS_DATA_INDEX], (IBUS_PAYLOAD_LEN - IBUS_HEADER1_LEN - IBUS_HEADER2_LEN));
+				UART_Read(IBUS_UART, &rxIBUS[jitter][IBUS_DATA_INDEX], (IBUS_PAYLOAD_LEN - IBUS_HEADER1_LEN - IBUS_HEADER2_LEN));
 				// Verify the Checksum
 				if (IBUS_Checksum(jitter)) {
 					// Kick Heartbeat

@@ -24,14 +24,6 @@
  */
 
 typedef struct {
-	GPIO_t * GPIO[PWM_NUM_CHANNELS];
-	uint32_t Pin[PWM_NUM_CHANNELS];
-	TIM_t * Timer;
-	uint32_t Tim_Freq;
-	uint32_t Tim_Reload;
-} PWM_Properties;
-
-typedef struct {
 	bool inputLost;
 	int16_t ch[PWM_NUM_CHANNELS];
 } PWM_Data;
@@ -40,8 +32,8 @@ typedef struct {
  * PUBLIC FUNCTIONS
  */
 
-bool PWM_Detect(PWM_Properties);
-void PWM_Init (PWM_Properties);
+bool PWM_Detect(void);
+void PWM_Init (void);
 void PWM_Deinit (void);
 void PWM_Update (void);
 PWM_Data* PWM_GetDataPtr (void);

@@ -41,24 +41,15 @@ typedef struct {
 } RADIO_Data;
 
 typedef union {
-	PWM_Data* ptrDataPWM;
-	PPM_Data* ptrDataPPM;
-	IBUS_Data* ptrDataIBUS;
-	SBUS_Data* ptrDataSBUS;
-} RADIO_ptrProtocolData;
+	PWM_Data* pwm;
+	PPM_Data* ppm;
+	IBUS_Data* ibus;
+	SBUS_Data* sbus;
+} RADIO_ptrData;
 
 typedef struct {
-	GPIO_t * GPIO_PWM[PWM_NUM_CHANNELS];
-	uint32_t Pin_PWM[PWM_NUM_CHANNELS];
-	UART_t * UART;
 	uint32_t Baud_SBUS;
-	GPIO_t * GPIO_UART;
-	uint32_t Pin_UART;
-	TIM_t * Timer;
-	uint32_t TimerFreq;
-	uint32_t TimerReload;
 	RADIO_Protocols Protocol;
-	RADIO_Data * ptrDataRadio;
 } RADIO_Properties;
 
 

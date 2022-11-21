@@ -30,16 +30,15 @@ void PPM_IRQ (void);
 
 volatile uint16_t rxPPM[PPM_JITTER_ARRAY][PPM_NUM_CHANNELS] = {0};
 volatile bool rxHeartbeatPPM = false;
-PPM_Properties ppm = {0};
 PPM_Data dataPPM = {0};
 
 /*
  * PUBLIC FUNCTIONS
  */
 
-bool PPM_Detect (PPM_Properties p)
+bool PPM_Detect (void)
 {
-	PPM_Init(p);
+	PPM_Init();
 
 	uint32_t tick = CORE_GetTick();
 	while ((PPM_TIMEOUT * 2) > CORE_GetTick() - tick)
@@ -52,24 +51,23 @@ bool PPM_Detect (PPM_Properties p)
 	return rxHeartbeatPPM;
 }
 
-void PPM_Init (PPM_Properties p)
+void PPM_Init (void)
 {
 	PPM_memset();
 
-	ppm = p;
-	TIM_Init(ppm.Timer, ppm.Tim_Freq, ppm.Tim_Reload);
-	TIM_Start(ppm.Timer);
+	TIM_Init(PPM_TIM, PPM_TIM_FREQ, PPM_TIM_RELOAD);
+	TIM_Start(PPM_TIM);
 
-	GPIO_EnableInput(ppm.GPIO, ppm.Pin, GPIO_Pull_Down);
-	GPIO_OnChange(ppm.GPIO, ppm.Pin, GPIO_IT_Rising, PPM_IRQ);
+	GPIO_EnableInput(PPM_GPIO, PPM_PIN, GPIO_Pull_Down);
+	GPIO_OnChange(PPM_GPIO, PPM_PIN, GPIO_IT_Rising, PPM_IRQ);
 }
 
 void PPM_Deinit (void)
 {
-	TIM_Deinit(ppm.Timer);
+	TIM_Deinit(PPM_TIM);
 
-	GPIO_OnChange(ppm.GPIO, ppm.Pin, GPIO_IT_None, NULL);
-	GPIO_Deinit(ppm.GPIO, ppm.Pin);
+	GPIO_OnChange(PPM_GPIO, PPM_PIN, GPIO_IT_None, NULL);
+	GPIO_Deinit(PPM_GPIO, PPM_PIN);
 }
 
 void PPM_Update (void)
@@ -158,7 +156,7 @@ void PPM_memset (void)
 
 void PPM_IRQ (void)
 {
-	uint16_t now = TIM_Read(ppm.Timer);	// Current IRQ Loop Time
+	uint16_t now = TIM_Read(PPM_TIM);	// Current IRQ Loop Time
 	static uint16_t prev = 0;			// Previous IRQ Loop Time
 	uint16_t pulse = 0;					// Pulse Width
 	static uint8_t ch = 0;				// Channel Index

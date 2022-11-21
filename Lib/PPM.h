@@ -24,14 +24,6 @@
  */
 
 typedef struct {
-	GPIO_t * GPIO;
-	uint32_t Pin;
-	TIM_t * Timer;
-	uint32_t Tim_Freq;
-	uint32_t Tim_Reload;
-} PPM_Properties;
-
-typedef struct {
 	bool inputLost;
 	int16_t ch[PPM_NUM_CHANNELS];
 } PPM_Data;
@@ -40,8 +32,8 @@ typedef struct {
  * PUBLIC FUNCTIONS
  */
 
-bool PPM_Detect(PPM_Properties);
-void PPM_Init (PPM_Properties);
+bool PPM_Detect(void);
+void PPM_Init (void);
 void PPM_Deinit (void);
 void PPM_Update (void);
 PPM_Data* PPM_GetDataPtr (void);
