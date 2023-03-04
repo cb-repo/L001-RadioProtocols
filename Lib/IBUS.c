@@ -24,7 +24,8 @@
 #define IBUS_JITTER_ARRAY	3		// Given 7ms payload period, ~21ms input lag
 #define IBUS_THRESHOLD		500
 #define IBUS_DROPPED_FRAMES	3
-#define IBUS_TIMEOUT		(IBUS_PERIOD * IBUS_DROPPED_FRAMES)
+#define IBUS_TIMEOUT_FS		(IBUS_PERIOD * IBUS_DROPPED_FRAMES) // Failsafe timeout. How long radio lost before failsafe is activated
+#define IBUS_TIMEOUT_IP		4 // Input timeout. How long after detecting message headers does remaining read timeout.
 
 /*
  * PRIVATE TYPES
@@ -34,15 +35,15 @@
  * PRIVATE PROTOTYPES
  */
 
-uint16_t IBUS_Truncate (uint16_t);
-bool IBUS_Checksum(uint8_t);
-void IBUS_HandleUART (void);
+uint16_t	IBUS_Truncate	( uint16_t );
+bool 		IBUS_Checksum	( void );
+void 		IBUS_HandleUART	( void );
 
 /*
  * PRIVATE VARIABLES
  */
 
-uint8_t rxIBUS[IBUS_JITTER_ARRAY][IBUS_PAYLOAD_LEN] = {0};
+uint8_t rxIBUS[IBUS_PAYLOAD_LEN] = {0};
 bool rxHeartbeatIBUS = false;
 IBUS_Data dataIBUS = {0};
 
@@ -55,7 +56,7 @@ bool IBUS_Detect(void)
 	IBUS_Init();
 
 	uint32_t tick = CORE_GetTick();
-	while ((IBUS_TIMEOUT * 2) > CORE_GetTick() - tick)
+	while ((IBUS_TIMEOUT_FS * 2) > CORE_GetTick() - tick)
 	{
 		IBUS_HandleUART();
 		CORE_Idle();
@@ -85,38 +86,28 @@ void IBUS_Update (void)
 
 	// Update Loop Variables
 	uint32_t now = CORE_GetTick();
-	static uint32_t prev = 0;
+	static uint32_t tick = 0;
 
 	// Check for New Input Data
 	if (rxHeartbeatIBUS)
 	{
-		// Average and Assign Input to data Struct
-		for (uint8_t j = IBUS_DATA_INDEX; j < (IBUS_PAYLOAD_LEN - IBUS_CHECKSUM_LEN); j += 2)
+		// Assign Input to data Struct
+		for (uint8_t i = IBUS_DATA_INDEX; i < (IBUS_PAYLOAD_LEN - IBUS_CHECKSUM_LEN); i += 2)
 		{
-			uint8_t avg = 0;
 			uint32_t ch = 0;
-			for (uint8_t i = 0; i < IBUS_JITTER_ARRAY; i++)
-			{
-				uint16_t trunc = (int16_t)(rxIBUS[i][j] | rxIBUS[i][j+1] << 8);
-				trunc = IBUS_Truncate(trunc);
-				if (trunc != 0)
-				{
-					ch += trunc;
-					avg += 1;
-				}
-			}
-			ch /= avg;
-			dataIBUS.ch[j] = ch;
+			uint16_t trunc = (int16_t)(rxIBUS[i] | rxIBUS[i+1] << 8);
+			trunc = IBUS_Truncate(trunc);
+			dataIBUS.ch[i] = ch;
 		}
 		rxHeartbeatIBUS = false;
-		prev = now;
+		tick = now;
 	}
 
 	// Check for Input Failsafe
-	if (IBUS_TIMEOUT <= (now - prev)) {
+	if ((IBUS_TIMEOUT_FS <= (now - tick)) && !dataIBUS.inputLost) { // If not receiving data and inputLost flag not set
 		dataIBUS.inputLost = true;
 		memset(rxIBUS, 0, sizeof(rxIBUS));
-	} else {
+	} else if (dataIBUS.inputLost) { // If receiving data and inputLost flag is not reset
 		dataIBUS.inputLost = false;
 	}
 }
@@ -151,45 +142,90 @@ uint16_t IBUS_Truncate (uint16_t r)
 	return retVal;
 }
 
-bool IBUS_Checksum(uint8_t jitter)
+bool IBUS_Checksum ( void )
 {
 	bool retVal = false;
 
-	uint16_t cs = (int16_t)(rxIBUS[jitter][IBUS_CHECKSUM_INDEX] | rxIBUS[jitter][IBUS_CHECKSUM_INDEX + 1] << 8);
+	uint16_t cs = (int16_t)(rxIBUS[IBUS_CHECKSUM_INDEX] | (int16_t)rxIBUS[IBUS_CHECKSUM_INDEX + 1] << 8);
 	uint16_t check = IBUS_CHECKSUM_START;
 	for (uint8_t i = 0 ; i < (IBUS_PAYLOAD_LEN - IBUS_CHECKSUM_LEN); i++)
 	{
-		check -= rxIBUS[jitter][i];
+		check -= rxIBUS[i];
 	}
 
-	if (cs == check) { retVal = true; }
+	if (cs == check)
+	{
+		retVal = true;
+	}
 
 	return retVal;
 }
 
 void IBUS_HandleUART (void)
 {
-	static uint8_t jitter = 0;			// Jitter-Smoothing Array Index
+	// Init Loop Variables
+	static uint32_t tick_timeout = 0;
+	static bool detH1 = false;
+	static bool detH2 = false;
 
-	while (UART_ReadCount(IBUS_UART) >= IBUS_PAYLOAD_LEN)
+	// Check for Start of transmission (Header1)
+	if ( !detH1 )
 	{
-		UART_Read(IBUS_UART, &rxIBUS[jitter][IBUS_HEADER1_INDEX], IBUS_HEADER1_LEN);
-		if (rxIBUS[jitter][IBUS_HEADER1_INDEX] == IBUS_HEADER1)
+		// Process All Available Bytes in Buffer Until Header1 Detected
+		while ( UART_ReadCount(IBUS_UART) >= IBUS_HEADER1_LEN)
 		{
-			UART_Read(IBUS_UART, &rxIBUS[jitter][IBUS_HEADER2_INDEX], IBUS_HEADER2_LEN);
-			if (rxIBUS[jitter][IBUS_HEADER2_INDEX] == IBUS_HEADER2)
-			{
-				// Read Channel Data
-				UART_Read(IBUS_UART, &rxIBUS[jitter][IBUS_DATA_INDEX], (IBUS_PAYLOAD_LEN - IBUS_HEADER1_LEN - IBUS_HEADER2_LEN));
-				// Verify the Checksum
-				if (IBUS_Checksum(jitter)) {
-					// Kick Heartbeat
-					rxHeartbeatIBUS = true;
-					//Increment Jitter Array Index
-					jitter += 1;
-					if (jitter >= IBUS_JITTER_ARRAY) { jitter = 0; }
-				}
+			// Read in Header1 Byte
+			UART_Read(IBUS_UART, &rxIBUS[IBUS_HEADER1_INDEX], IBUS_HEADER1_LEN);
+			// Check if Correct
+			if (rxIBUS[IBUS_HEADER1_INDEX] == IBUS_HEADER1) {
+				detH1 = true;
+				break;
 			}
+		}
+	}
+
+	// Header1 Detected, Check for Header2
+	if ( detH1 && !detH2)
+	{
+		// Only Proceed When Byte in Buffer
+		if ( UART_ReadCount(IBUS_UART) >= IBUS_HEADER2_LEN )
+		{
+			// Read in Header2 Byte
+			UART_Read(IBUS_UART, &rxIBUS[IBUS_HEADER2_INDEX], IBUS_HEADER2_LEN);
+			// Check if correct
+			if (rxIBUS[IBUS_HEADER2_INDEX] == IBUS_HEADER2) {
+				detH2 = true;
+				tick_timeout = CORE_GetTick();
+			} else if (rxIBUS[IBUS_HEADER2_INDEX] == IBUS_HEADER1) { // Case for 2 sequential 0x20 bytes
+				// Do nothing. Next loop will re-check for Header2
+			} else {
+				detH1 = false;
+			}
+		}
+	}
+
+	// Both Headers Detected, Read Remaining Transmission
+	if ( detH1 && detH2 )
+	{
+		// Only Proceed When Full Message is Ready
+		if ( UART_ReadCount(IBUS_UART) >= (IBUS_PAYLOAD_LEN - IBUS_HEADER1_LEN - IBUS_HEADER2_LEN) )
+		{
+			// Read in Remaining Message
+			UART_Read(IBUS_UART, &rxIBUS[IBUS_DATA_INDEX], (IBUS_PAYLOAD_LEN - IBUS_HEADER1_LEN - IBUS_HEADER2_LEN));
+			// Verify the Checksum
+			if (IBUS_Checksum()) {
+				rxHeartbeatIBUS = true;
+				// Reset detect for next read
+				detH1 = false;
+				detH2 = false;
+			}
+		}
+
+		// Check for a timeout
+		if ( (CORE_GetTick() - IBUS_TIMEOUT_IP) >= tick_timeout)
+		{
+			detH1 = false;
+			detH2 = false;
 		}
 	}
 }
