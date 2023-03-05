@@ -61,11 +61,11 @@ void RADIO_Detect (RADIO_Properties * r)
 			break;
 		}
 
-//		if (IBUS_Detect())
-//		{
-//			r->Protocol = IBUS;
-//			break;
-//		}
+		if (IBUS_Detect())
+		{
+			r->Protocol = IBUS;
+			break;
+		}
 
 		if (PWM_Detect())
 		{

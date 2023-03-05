@@ -92,22 +92,22 @@ void IBUS_Update (void)
 	if (rxHeartbeatIBUS)
 	{
 		// Assign Input to data Struct
+		uint8_t ch = 0;
 		for (uint8_t i = IBUS_DATA_INDEX; i < (IBUS_PAYLOAD_LEN - IBUS_CHECKSUM_LEN); i += 2)
 		{
-			uint32_t ch = 0;
 			uint16_t trunc = (int16_t)(rxIBUS[i] | rxIBUS[i+1] << 8);
-			trunc = IBUS_Truncate(trunc);
-			dataIBUS.ch[i] = ch;
+			dataIBUS.ch[ch] = IBUS_Truncate(trunc);
+			ch += 1;
 		}
 		rxHeartbeatIBUS = false;
 		tick = now;
 	}
 
 	// Check for Input Failsafe
-	if ((IBUS_TIMEOUT_FS <= (now - tick)) && !dataIBUS.inputLost) { // If not receiving data and inputLost flag not set
+	if (IBUS_TIMEOUT_FS <= (now - tick)) { // If not receiving data and inputLost flag not set
 		dataIBUS.inputLost = true;
 		memset(rxIBUS, 0, sizeof(rxIBUS));
-	} else if (dataIBUS.inputLost) { // If receiving data and inputLost flag is not reset
+	} else { // If receiving data and inputLost flag is not reset
 		dataIBUS.inputLost = false;
 	}
 }
@@ -148,7 +148,9 @@ bool IBUS_Checksum ( void )
 
 	uint16_t cs = (int16_t)(rxIBUS[IBUS_CHECKSUM_INDEX] | (int16_t)rxIBUS[IBUS_CHECKSUM_INDEX + 1] << 8);
 	uint16_t check = IBUS_CHECKSUM_START;
-	for (uint8_t i = 0 ; i < (IBUS_PAYLOAD_LEN - IBUS_CHECKSUM_LEN); i++)
+	check -= IBUS_HEADER1;
+	check -= IBUS_HEADER2;
+	for (uint8_t i = IBUS_DATA_INDEX; i < IBUS_CHECKSUM_INDEX; i++)
 	{
 		check -= rxIBUS[i];
 	}
@@ -164,7 +166,8 @@ bool IBUS_Checksum ( void )
 void IBUS_HandleUART (void)
 {
 	// Init Loop Variables
-	static uint32_t tick_timeout = 0;
+	uint32_t now = CORE_GetTick();
+	static uint32_t timeout = 0;
 	static bool detH1 = false;
 	static bool detH2 = false;
 
@@ -179,6 +182,7 @@ void IBUS_HandleUART (void)
 			// Check if Correct
 			if (rxIBUS[IBUS_HEADER1_INDEX] == IBUS_HEADER1) {
 				detH1 = true;
+				timeout = now + IBUS_TIMEOUT_IP;
 				break;
 			}
 		}
@@ -195,12 +199,19 @@ void IBUS_HandleUART (void)
 			// Check if correct
 			if (rxIBUS[IBUS_HEADER2_INDEX] == IBUS_HEADER2) {
 				detH2 = true;
-				tick_timeout = CORE_GetTick();
+				timeout = now + IBUS_TIMEOUT_IP;
 			} else if (rxIBUS[IBUS_HEADER2_INDEX] == IBUS_HEADER1) { // Case for 2 sequential 0x20 bytes
 				// Do nothing. Next loop will re-check for Header2
 			} else {
 				detH1 = false;
 			}
+		}
+
+		// Check for a timeout
+		if ( now > timeout )
+		{
+			detH1 = false;
+			detH2 = false;
 		}
 	}
 
@@ -215,14 +226,14 @@ void IBUS_HandleUART (void)
 			// Verify the Checksum
 			if (IBUS_Checksum()) {
 				rxHeartbeatIBUS = true;
-				// Reset detect for next read
-				detH1 = false;
-				detH2 = false;
 			}
+			// Reset detect for next read weather or not CS is correct
+			detH1 = false;
+			detH2 = false;
 		}
 
 		// Check for a timeout
-		if ( (CORE_GetTick() - IBUS_TIMEOUT_IP) >= tick_timeout)
+		if ( now > timeout)
 		{
 			detH1 = false;
 			detH2 = false;
