@@ -112,6 +112,8 @@ void RADIO_Init (RADIO_Properties *r)
 		PWM_Init();
 		ptrData.pwm = PWM_GetDataPtr();
 	}
+
+	RADIO_Update();
 }
 
 void RADIO_Update (void)
