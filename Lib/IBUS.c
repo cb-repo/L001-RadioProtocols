@@ -70,6 +70,7 @@ bool IBUS_Detect(void)
 void IBUS_Init (void)
 {
 	memset(rxIBUS, 0, sizeof(rxIBUS));
+	dataIBUS.inputLost = true;
 
 	UART_Init(IBUS_UART, IBUS_BAUD, UART_Mode_Default);
 }

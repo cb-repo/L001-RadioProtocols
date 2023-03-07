@@ -63,6 +63,7 @@ bool PWM_Detect(void)
 void PWM_Init ()
 {
 	PWM_memset();
+	dataPWM.inputLost = true;
 
 	TIM_Init(PWM_TIM, PWM_TIM_FREQ, PWM_TIM_RELOAD);
 	TIM_Start(PWM_TIM);

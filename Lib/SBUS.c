@@ -73,6 +73,7 @@ bool SBUS_Detect(uint32_t baud)
 void SBUS_Init (uint32_t baud)
 {
 	memset(rxSBUS, 0, sizeof(rxSBUS));
+	dataSBUS.inputLost = true;
 
 	UART_Init(SBUS_UART, baud, UART_Mode_Inverted);
 	UART_ReadFlush(SBUS_UART);

@@ -54,6 +54,7 @@ bool PPM_Detect (void)
 void PPM_Init (void)
 {
 	PPM_memset();
+	dataPPM.inputLost = true;
 
 	TIM_Init(PPM_TIM, PPM_TIM_FREQ, PPM_TIM_RELOAD);
 	TIM_Start(PPM_TIM);
