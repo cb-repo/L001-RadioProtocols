@@ -19,12 +19,18 @@
 #define PWM_CENTER			1500
 #define PWM_MAX				2000
 
+#define PWM_CH1				0
+#define PWM_CH2				1
+#define PWM_CH3				2
+#define PWM_CH4				3
+
 /*
  * PUBLIC TYPES
  */
 
 typedef struct {
 	bool inputLost;
+	bool inputLostCh[PWM_NUM_CHANNELS];
 	int16_t ch[PWM_NUM_CHANNELS];
 } PWM_Data;
 

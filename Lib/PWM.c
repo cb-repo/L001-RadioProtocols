@@ -6,11 +6,11 @@
  * PRIVATE DEFINITIONS
  */
 
-#define PWM_EOF_TIME		4000
-#define PWM_JITTER_ARRAY	3
+#define PWM_EOF_TIME			4000
+#define PWM_JITTER_ARRAY		3
 #define PWM_THRESHOLD		100
-#define PWM_TIMEOUT_CYCLES	3
-#define PWM_TIMEOUT			(PWM_PERIOD * PWM_TIMEOUT_CYCLES)
+#define PWM_TIMEOUT_CYCLES		3
+#define PWM_TIMEOUT				(PWM_PERIOD * PWM_TIMEOUT_CYCLES)
 
 /*
  * PRIVATE TYPES
@@ -31,7 +31,7 @@ void PWM4_IRQ (void);
  * PRIVATE VARIABLES
  */
 
-volatile uint16_t rxPWM[PWM_JITTER_ARRAY][PWM_NUM_CHANNELS] = {0};
+volatile uint16_t rxPWM[PWM_NUM_CHANNELS] = {0};
 volatile bool rxHeartbeatPWM[PWM_NUM_CHANNELS] = {0};
 PWM_Data dataPWM = {0};
 
@@ -39,39 +39,46 @@ PWM_Data dataPWM = {0};
  * PUBLIC FUNCTIONS
  */
 
-// TODO: Fix the false-positive when running PPM protocol
 bool PWM_Detect(void)
 {
-	PWM_Init();
-
+	// Init Loop Variables
+	bool retVal = false;
 	uint32_t tick = CORE_GetTick();
-	while ((PWM_TIMEOUT * 2) > CORE_GetTick() - tick)
-	{
+
+	// Run PWM Detect
+	PWM_Init();
+	while ((PWM_TIMEOUT * 2) > CORE_GetTick() - tick) {
 		CORE_Idle();
 	}
-
 	PWM_Deinit();
 
-	bool retVal = false;
-	for (uint8_t i = 0; i < PWM_NUM_CHANNELS; i++)
-	{
-		retVal = retVal || rxHeartbeatPWM[i];
+	// Consolidate Heartbeats to Single retVal
+	for (uint8_t ch = 0; ch < PWM_NUM_CHANNELS; ch++) {
+		retVal |= rxHeartbeatPWM[ch];
 	}
+
 	return retVal;
 }
 
 void PWM_Init ()
 {
+	// Zero Channel Data Array
 	PWM_memset();
+	// Assume No Radio Signal on Init
 	dataPWM.inputLost = true;
+	for (uint8_t ch = 0; ch < PWM_NUM_CHANNELS; ch++) {
+		dataPWM.inputLostCh[ch] = true;
+	}
 
+	// Start Timer to Measure Pulsewidths
 	TIM_Init(PWM_TIM, PWM_TIM_FREQ, PWM_TIM_RELOAD);
 	TIM_Start(PWM_TIM);
-
+	// Enable All Radio GPIO As Inputs
 	GPIO_EnableInput(PWM_S1_GPIO, PWM_S1_PIN, GPIO_Pull_Down);
 	GPIO_EnableInput(PWM_S2_GPIO, PWM_S2_PIN, GPIO_Pull_Down);
 	GPIO_EnableInput(PWM_S3_GPIO, PWM_S3_PIN, GPIO_Pull_Down);
 	GPIO_EnableInput(PWM_S4_GPIO, PWM_S4_PIN, GPIO_Pull_Down);
+	// Assign IRQ For Each Input
 	GPIO_OnChange(PWM_S1_GPIO, PWM_S1_PIN, GPIO_IT_Both, PWM1_IRQ);
 	GPIO_OnChange(PWM_S2_GPIO, PWM_S2_PIN, GPIO_IT_Both, PWM2_IRQ);
 	GPIO_OnChange(PWM_S3_GPIO, PWM_S3_PIN, GPIO_IT_Both, PWM3_IRQ);
@@ -80,12 +87,14 @@ void PWM_Init ()
 
 void PWM_Deinit (void)
 {
+	// Stop and Deinitialise the Radio Timer
 	TIM_Deinit(TIM_RADIO);
-
+	// Unassign IRQ for Each Radio Input
 	GPIO_OnChange(PWM_S1_GPIO, PWM_S1_PIN, GPIO_IT_None, NULL);
 	GPIO_OnChange(PWM_S2_GPIO, PWM_S2_PIN, GPIO_IT_None, NULL);
 	GPIO_OnChange(PWM_S3_GPIO, PWM_S3_PIN, GPIO_IT_None, NULL);
 	GPIO_OnChange(PWM_S4_GPIO, PWM_S4_PIN, GPIO_IT_None, NULL);
+	// De-Initialise Radio Input GPIO
 	GPIO_Deinit(PWM_S1_GPIO, PWM_S1_PIN);
 	GPIO_Deinit(PWM_S2_GPIO, PWM_S2_PIN);
 	GPIO_Deinit(PWM_S3_GPIO, PWM_S3_PIN);
@@ -96,37 +105,41 @@ void PWM_Update (void)
 {
 	// Init Loop Variables
 	uint32_t now = CORE_GetTick();
-	static uint32_t tick = 0;
+	static uint32_t tick[PWM_NUM_CHANNELS] = {0};
 
-	// Check For New Input Data
+	// Iterate through each input
 	for (uint8_t ch = 0; ch < PWM_NUM_CHANNELS; ch++)
 	{
+
 		if (rxHeartbeatPWM[ch])
 		{
-			// Average Data over Input Jitter Array
-			uint8_t avg = 0;
-			uint32_t inter = 0;
-			for (uint8_t i = 0; i < PWM_JITTER_ARRAY; i++)
-			{
-				uint16_t trunc = PWM_Truncate(rxPWM[i][ch]);
-				if (trunc != 0)
-				{
-					inter += trunc;
-					avg += 1;
-				}
-			}
-			dataPWM.ch[ch] = inter / avg;
+			// Assign Data to Array
+			dataPWM.ch[ch] = PWM_Truncate(rxPWM[ch]);
 			// Reset Flags
 			rxHeartbeatPWM[ch] = false;
-			dataPWM.inputLost = false;
-			tick = now;
+			dataPWM.inputLostCh[ch] = false;
+			tick[ch] = now;
+		}
+
+		if (!dataPWM.inputLostCh[ch] && PWM_TIMEOUT <= (now - tick[ch]))
+		{
+			// Trigger InputLost Flag
+			dataPWM.inputLostCh[ch] = true;
+			//Reset Channel Data
+			dataPWM.ch[ch] = 0;
 		}
 	}
 
-	// Check for Input Failsafe
-	if (!dataPWM.inputLost && PWM_TIMEOUT <= (now - tick)) {
-		dataPWM.inputLost = true;
-		PWM_memset();
+	//
+	for (uint8_t ch = 0; ch < PWM_NUM_CHANNELS; ch++)
+	{
+		if (!dataPWM.inputLostCh[ch]) {
+			dataPWM.inputLost = false;
+			break;
+		}
+		if (ch == (PWM_NUM_CHANNELS - 1)) {
+			dataPWM.inputLost = true;
+		}
 	}
 }
 
@@ -162,14 +175,13 @@ uint16_t PWM_Truncate (uint16_t r)
 
 void PWM_memset (void)
 {
-	for (uint8_t j = 0; j < PWM_NUM_CHANNELS; j++)
+	for (uint8_t ch = 0; ch < PWM_NUM_CHANNELS; ch++)
 	{
-		for (uint8_t i = 0; i < PWM_JITTER_ARRAY; i++)
-		{
-			rxPWM[i][j] = 0;
-		}
+		rxPWM[ch] = 0;
 	}
 }
+
+
 
 /*
  * INTERRUPT ROUTINES
@@ -177,124 +189,105 @@ void PWM_memset (void)
 
 void PWM1_IRQ (void)
 {
-	uint16_t now = TIM_Read(TIM_RADIO);
-	uint16_t pulse = 0;
-	static uint16_t tick = 0;
-	static uint8_t jitter = 0;
+	// Init Loop Variables
+	uint32_t now = TIM_Read(TIM_RADIO);
+	uint32_t pulse = 0;
+	static uint32_t tick = 0;
 
 	if (GPIO_Read(PWM_S1_GPIO, PWM_S1_PIN))
 	{
+		// Assign Variables for Next Loop
 		tick = now;
 	}
 	else
 	{
+		// Calculate Signal Data
 		pulse = now - tick;
-		// Check pulse is valid
-		if (pulse <= (PWM_MAX + PWM_THRESHOLD) && pulse >= (PWM_MIN - PWM_THRESHOLD))
-		{
-			rxPWM[jitter][0] = pulse;
-			rxHeartbeatPWM[0] = CORE_GetTick();
-			jitter += 1;
+		// Check Pulse is Valid
+		if ( pulse <= (PWM_MAX + PWM_THRESHOLD) && pulse >= (PWM_MIN - PWM_THRESHOLD) ) {
+			// Assign Pulse to Data Array
+			rxPWM[PWM_CH1] = pulse;
+			// Trigger New Data Flag
+			rxHeartbeatPWM[PWM_CH1] = true;
 		}
-	}
-
-	// Check for Jitter Array Index Reset
-	if (jitter >= PWM_JITTER_ARRAY)
-	{
-		jitter = 0;
 	}
 }
 
 void PWM2_IRQ (void)
 {
-	uint16_t now = TIM_Read(TIM_RADIO);
-	uint16_t pulse = 0;
-	static uint16_t tick = 0;
-	static uint8_t jitter = 0;
+	// Init Loop Variables
+	uint32_t now = TIM_Read(TIM_RADIO);
+	uint32_t pulse = 0;
+	static uint32_t tick = 0;
 
 	if (GPIO_Read(PWM_S2_GPIO, PWM_S2_PIN))
 	{
+		// Assign Variables for Next Loop
 		tick = now;
 	}
 	else
 	{
+		// Calculate Signal Data
 		pulse = now - tick;
-
-		// Check pulse is valid
-		if (pulse <= (PWM_MAX + PWM_THRESHOLD) && pulse >= (PWM_MIN - PWM_THRESHOLD))
-		{
-			rxPWM[jitter][1] = pulse;
-			rxHeartbeatPWM[1] = CORE_GetTick();
-			jitter += 1;
+		// Check Pulse is Valid
+		if ( pulse <= (PWM_MAX + PWM_THRESHOLD) && pulse >= (PWM_MIN - PWM_THRESHOLD) ) {
+			// Assign Pulse to Data Array
+			rxPWM[PWM_CH2] = pulse;
+			// Trigger New Data Flag
+			rxHeartbeatPWM[PWM_CH2] = true;
 		}
-	}
-
-	// Check for Jitter Array Index Reset
-	if (jitter >= PWM_JITTER_ARRAY)
-	{
-		jitter = 0;
 	}
 }
 
 void PWM3_IRQ (void)
 {
-	uint16_t now = TIM_Read(TIM_RADIO);
-	uint16_t pulse = 0;
-	static uint16_t tick = 0;
-	static uint8_t jitter = 0;
+	// Init Loop Variables
+	uint32_t now = TIM_Read(TIM_RADIO);
+	uint32_t pulse = 0;
+	static uint32_t tick = 0;
 
 	if (GPIO_Read(PWM_S3_GPIO, PWM_S3_PIN))
 	{
+		// Assign Variables for Next Loop
 		tick = now;
 	}
 	else
 	{
+		// Calculate Signal Data
 		pulse = now - tick;
-
-		// Check pulse is valid
-		if (pulse <= (PWM_MAX + PWM_THRESHOLD) && pulse >= (PWM_MIN - PWM_THRESHOLD))
-		{
-			rxPWM[jitter][2] = pulse;
-			rxHeartbeatPWM[2] = CORE_GetTick();
-			jitter += 1;
+		// Check Pulse is Valid
+		if ( pulse <= (PWM_MAX + PWM_THRESHOLD) && pulse >= (PWM_MIN - PWM_THRESHOLD) ) {
+			// Assign Pulse to Data Array
+			rxPWM[PWM_CH3] = pulse;
+			// Trigger New Data Flag
+			rxHeartbeatPWM[PWM_CH3] = true;
 		}
-	}
-
-	// Check for Jitter Array Index Reset
-	if (jitter >= PWM_JITTER_ARRAY)
-	{
-		jitter = 0;
 	}
 }
 
 void PWM4_IRQ (void)
 {
-	uint16_t now = TIM_Read(TIM_RADIO);
-	uint16_t pulse = 0;
-	static uint16_t tick = 0;
-	static uint8_t jitter = 0;
+	// Init Loop Variables
+	uint32_t now = TIM_Read(TIM_RADIO);
+	uint32_t pulse = 0;
+	static uint32_t tick = 0;
 
 	if (GPIO_Read(PWM_S4_GPIO, PWM_S4_PIN))
 	{
+		// Assign Variables for Next Loop
 		tick = now;
 	}
 	else
 	{
+		// Calculate Signal Data
 		pulse = now - tick;
-
-		// Check pulse is valid
-		if (pulse <= (PWM_MAX + PWM_THRESHOLD) && pulse >= (PWM_MIN - PWM_THRESHOLD))
-		{
-			rxPWM[jitter][3] = pulse;
-			rxHeartbeatPWM[3] = CORE_GetTick();
-			jitter += 1;
+		// Check Pulse is Valid
+		if ( pulse <= (PWM_MAX + PWM_THRESHOLD) && pulse >= (PWM_MIN - PWM_THRESHOLD) ) {
+			// Assign Pulse to Data Array
+			rxPWM[PWM_CH4] = pulse;
+			// Trigger New Data Flag
+			rxHeartbeatPWM[PWM_CH4] = true;
 		}
-	}
-
-	// Check for Jitter Array Index Reset
-	if (jitter >= PWM_JITTER_ARRAY)
-	{
-		jitter = 0;
 	}
 }
 
