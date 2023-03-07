@@ -57,7 +57,7 @@ typedef struct {
  * PUBLIC FUNCTIONS
  */
 
-void RADIO_Detect (RADIO_Properties *);
+bool RADIO_DetectNew (RADIO_Properties *);
 void RADIO_Init (RADIO_Properties *);
 void RADIO_Update (void);
 RADIO_Data* RADIO_GetDataPtr (void);

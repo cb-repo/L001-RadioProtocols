@@ -29,58 +29,63 @@ RADIO_ptrData ptrData;
  * PUBLIC FUNCTIONS
  */
 
-void RADIO_Detect (RADIO_Properties * r)
+bool RADIO_DetectNew (RADIO_Properties * r)
 {
+	// Init Loop Variables
+	uint32_t tick = CORE_GetTick();
+	bool retVal = false;
+
+	// Deinit All Radio Options
 	PWM_Deinit();
 	PPM_Deinit();
 	SBUS_Deinit();
 	IBUS_Deinit();
 
-	uint32_t tick = CORE_GetTick();
-
-	while (1)
+	// Check for Valid Radio Connection
+	if (PPM_Detect())
 	{
-		uint32_t now = CORE_GetTick();
-		if (PPM_Detect())
+		if (r->Protocol != PPM)
 		{
 			r->Protocol = PPM;
-			break;
+			retVal = true;
 		}
-
-		if (SBUS_Detect(SBUS_BAUD))
+	}
+	else if (SBUS_Detect(SBUS_BAUD))
+	{
+		if (r->Protocol != SBUS && r->Baud_SBUS != SBUS_BAUD)
 		{
 			r->Protocol = SBUS;
 			r->Baud_SBUS = SBUS_BAUD;
-			break;
+			retVal = true;
 		}
-
-		if (SBUS_Detect(SBUS_BAUD_FAST))
+	}
+	else if (SBUS_Detect(SBUS_BAUD_FAST))
+	{
+		if (r->Protocol != SBUS && r->Baud_SBUS != SBUS_BAUD_FAST)
 		{
 			r->Protocol = SBUS;
-			r->Baud_SBUS = SBUS_BAUD_FAST;
-			break;
+			r->Baud_SBUS = SBUS_BAUD;
+			retVal = true;
 		}
-
-		if (IBUS_Detect())
+	}
+	else if (IBUS_Detect())
+	{
+		if (r->Protocol != IBUS)
 		{
 			r->Protocol = IBUS;
-			break;
+			retVal = true;
 		}
-
-		if (PWM_Detect())
-		{
-			r->Protocol = PWM;
-			break;
-		}
-
-		if ( RADIO_DETECT_TIMEOUT <= (now - tick))
-		{
-			r->Protocol = PWM;
-			break;
-		}
-
-		CORE_Idle();
 	}
+	else if (PWM_Detect())
+	{
+		if (r->Protocol != PWM)
+		{
+			r->Protocol = PWM;
+			retVal = true;
+		}
+	}
+
+	return retVal;
 }
 
 void RADIO_Init (RADIO_Properties *r)
