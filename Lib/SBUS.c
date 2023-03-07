@@ -28,7 +28,8 @@
 
 #define SBUS_THRESHOLD		500
 #define SBUS_DROPPED_FRAMES	3
-#define SBUS_TIMEOUT		(SBUS_PERIOD * SBUS_DROPPED_FRAMES)
+#define SBUS_TIMEOUT_FS		(SBUS_PERIOD * SBUS_DROPPED_FRAMES)
+#define SBUS_TIMEOUT_IP		4
 
 /*
  * PRIVATE TYPES
@@ -38,14 +39,15 @@
  * PRIVATE PROTOTYPES
  */
 
-uint16_t SBUS_Transform (uint16_t);
-bool SBUS_HandleUART (void);
+uint16_t 	SBUS_Transform 	( uint16_t );
+void 		SBUS_HandleUART ( void );
 
 /*
  * PRIVATE VARIABLES
  */
 
 uint8_t rxSBUS[2*SBUS_PAYLOAD_LEN] = {0};
+bool rxHeartbeatSBUS = false;
 SBUS_Data dataSBUS = {0};
 
 /*
@@ -54,23 +56,18 @@ SBUS_Data dataSBUS = {0};
 
 bool SBUS_Detect(uint32_t baud)
 {
-	bool retVal = false;
-
 	SBUS_Init(baud);
 
 	uint32_t tick = CORE_GetTick();
-	while ((SBUS_TIMEOUT * 2) > CORE_GetTick() - tick)
+	while ((SBUS_TIMEOUT_FS * 2) > CORE_GetTick() - tick)
 	{
-		if (SBUS_HandleUART())
-		{
-			retVal = true;
-		}
+		SBUS_HandleUART();
 		CORE_Idle();
 	}
 
 	SBUS_Deinit();
 
-	return retVal;
+	return rxHeartbeatSBUS;
 }
 
 void SBUS_Init (uint32_t baud)
@@ -88,13 +85,17 @@ void SBUS_Deinit (void)
 
 void SBUS_Update (void)
 {
+	// Update Rx Data
+	SBUS_HandleUART();
+
 	// Update Loop Variables
 	uint32_t now = CORE_GetTick();
 	static uint32_t prev = 0;
 
 	// Check for New Input Data
-	if (SBUS_HandleUART())
+	if (rxHeartbeatSBUS)
 	{
+		// Decode SBUS Data
 		dataSBUS.ch[0]  = SBUS_Transform( (int16_t)( (rxSBUS[1]		  | rxSBUS[2] << 8 ) & 0x07FF) );
 		dataSBUS.ch[1]  = SBUS_Transform( (int16_t)( (rxSBUS[2]  >> 3 | rxSBUS[3] << 5 ) & 0x07FF) );
 		dataSBUS.ch[2]  = SBUS_Transform( (int16_t)( (rxSBUS[3]  >> 6 | rxSBUS[4] << 2  | rxSBUS[5] << 10 ) & 0x07FF) );
@@ -118,18 +119,18 @@ void SBUS_Update (void)
 		dataSBUS.failsafe  = rxSBUS[23] & SBUS_FAILSAFE_MASK;
 		dataSBUS.frameLost = rxSBUS[23] & SBUS_LOSTFRAME_MASK;
 
+		rxHeartbeatSBUS = false;
 		prev = now;
 	}
 
 	// Check Failsafe
-
 	if (dataSBUS.failsafe)
 	{
 		dataSBUS.inputLost = true;
 	}
 	else
 	{
-		if (SBUS_TIMEOUT <= (now - prev)) {
+		if (SBUS_TIMEOUT_FS <= (now - prev)) {
 			dataSBUS.inputLost = true;
 			memset(rxSBUS, 0, sizeof(rxSBUS));
 		} else {
@@ -177,43 +178,52 @@ uint16_t SBUS_Transform (uint16_t r)
 }
 
 
-bool SBUS_HandleUART (void)
+void SBUS_HandleUART (void)
 {
-	static uint8_t byte_p = SBUS_FOOTER;
-	static bool detected = false;
-	bool retVal = false;
+	uint32_t now = CORE_GetTick();
+	static uint32_t timeout = 0;
+	static bool detH = false;
 
-	if ( !detected ) // Not detected header
+	// Check for Start of transmission (Header)
+	if ( !detH )
 	{
-		while (UART_ReadCount(SBUS_UART))
+		// Process All Available Bytes in Buffer Until Header Detected
+		while (UART_ReadCount(SBUS_UART) >= SBUS_HEADER_LEN)
 		{
+			// Read in Next Byte
 			UART_Read(SBUS_UART, &rxSBUS[SBUS_HEADER_INDEX], SBUS_HEADER_LEN);
-			bool b = rxSBUS[SBUS_HEADER_INDEX] == SBUS_HEADER;
-			bool b_p = byte_p == SBUS_FOOTER;
-			byte_p = rxSBUS[SBUS_HEADER_INDEX];
-			if (b && b_p)
+			// Check if the Byte is the Message Header1
+			if ( rxSBUS[SBUS_HEADER_INDEX] == SBUS_HEADER )
 			{
-				detected = true;
+				detH = true;
+				timeout = now + SBUS_TIMEOUT_IP;
 				break;
 			}
 		}
 	}
 
-	if ( detected )  // header has been detected
+	// Header Detected, Read Remaining Transmission
+	if ( detH )
 	{
+		// Only Proceed When Full Message is Ready
 		if ( UART_ReadCount(SBUS_UART) >= (SBUS_PAYLOAD_LEN - SBUS_HEADER_LEN) )
 		{
+			// Read in Remaining Message
 			UART_Read(SBUS_UART, &rxSBUS[SBUS_DATA_INDEX], (SBUS_PAYLOAD_LEN - SBUS_HEADER_LEN));
 			//
-			byte_p = rxSBUS[SBUS_FOOTER_INDEX];
-			//
-			retVal = true;
+			if ( rxSBUS[SBUS_FOOTER_INDEX] == SBUS_FOOTER ) {
+				rxHeartbeatSBUS = true;
+			}
 			// Reset the detected flag
-			detected = false;
+			detH = false;
+		}
+
+		// Check for a timeout
+		if ( now > timeout)
+		{
+			detH = false;
 		}
 	}
-
-	return retVal;
 }
 
 /*

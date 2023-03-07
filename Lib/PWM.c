@@ -8,7 +8,7 @@
 
 #define PWM_EOF_TIME		4000
 #define PWM_JITTER_ARRAY	3
-#define PWM_THRESHOLD		500
+#define PWM_THRESHOLD		100
 #define PWM_TIMEOUT_CYCLES	3
 #define PWM_TIMEOUT			(PWM_PERIOD * PWM_TIMEOUT_CYCLES)
 
@@ -200,7 +200,9 @@ void PWM1_IRQ (void)
 		}
 	}
 
-	if (jitter >= PWM_JITTER_ARRAY) {
+	// Check for Jitter Array Index Reset
+	if (jitter >= PWM_JITTER_ARRAY)
+	{
 		jitter = 0;
 	}
 }
@@ -229,7 +231,9 @@ void PWM2_IRQ (void)
 		}
 	}
 
-	if (jitter >= PWM_JITTER_ARRAY) {
+	// Check for Jitter Array Index Reset
+	if (jitter >= PWM_JITTER_ARRAY)
+	{
 		jitter = 0;
 	}
 }
@@ -258,7 +262,9 @@ void PWM3_IRQ (void)
 		}
 	}
 
-	if (jitter >= PWM_JITTER_ARRAY) {
+	// Check for Jitter Array Index Reset
+	if (jitter >= PWM_JITTER_ARRAY)
+	{
 		jitter = 0;
 	}
 }
@@ -287,7 +293,9 @@ void PWM4_IRQ (void)
 		}
 	}
 
-	if (jitter >= PWM_JITTER_ARRAY) {
+	// Check for Jitter Array Index Reset
+	if (jitter >= PWM_JITTER_ARRAY)
+	{
 		jitter = 0;
 	}
 }

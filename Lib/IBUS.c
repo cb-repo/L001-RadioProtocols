@@ -177,9 +177,9 @@ void IBUS_HandleUART (void)
 		// Process All Available Bytes in Buffer Until Header1 Detected
 		while ( UART_ReadCount(IBUS_UART) >= IBUS_HEADER1_LEN)
 		{
-			// Read in Header1 Byte
+			// Read in Next Byte
 			UART_Read(IBUS_UART, &rxIBUS[IBUS_HEADER1_INDEX], IBUS_HEADER1_LEN);
-			// Check if Correct
+			// Check if the Byte is the Message Header1
 			if (rxIBUS[IBUS_HEADER1_INDEX] == IBUS_HEADER1) {
 				detH1 = true;
 				timeout = now + IBUS_TIMEOUT_IP;
@@ -194,9 +194,9 @@ void IBUS_HandleUART (void)
 		// Only Proceed When Byte in Buffer
 		if ( UART_ReadCount(IBUS_UART) >= IBUS_HEADER2_LEN )
 		{
-			// Read in Header2 Byte
+			// Read in Next Byte
 			UART_Read(IBUS_UART, &rxIBUS[IBUS_HEADER2_INDEX], IBUS_HEADER2_LEN);
-			// Check if correct
+			// Check if the Byte is the Message Header1
 			if (rxIBUS[IBUS_HEADER2_INDEX] == IBUS_HEADER2) {
 				detH2 = true;
 				timeout = now + IBUS_TIMEOUT_IP;
