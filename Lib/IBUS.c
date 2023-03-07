@@ -100,16 +100,16 @@ void IBUS_Update (void)
 			dataIBUS.ch[ch] = IBUS_Truncate(trunc);
 			ch += 1;
 		}
+		// Reset Flags
 		rxHeartbeatIBUS = false;
+		dataIBUS.inputLost = false;
 		tick = now;
 	}
 
 	// Check for Input Failsafe
-	if (IBUS_TIMEOUT_FS <= (now - tick)) { // If not receiving data and inputLost flag not set
+	if (!dataIBUS.inputLost && IBUS_TIMEOUT_FS <= (now - tick)) { // If not receiving data and inputLost flag not set
 		dataIBUS.inputLost = true;
 		memset(rxIBUS, 0, sizeof(rxIBUS));
-	} else { // If receiving data and inputLost flag is not reset
-		dataIBUS.inputLost = false;
 	}
 }
 

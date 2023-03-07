@@ -89,7 +89,7 @@ void SBUS_Update (void)
 	// Update Rx Data
 	SBUS_HandleUART();
 
-	// Update Loop Variables
+	// Init Loop Variables
 	uint32_t now = CORE_GetTick();
 	static uint32_t prev = 0;
 
@@ -120,7 +120,9 @@ void SBUS_Update (void)
 		dataSBUS.failsafe  = rxSBUS[23] & SBUS_FAILSAFE_MASK;
 		dataSBUS.frameLost = rxSBUS[23] & SBUS_LOSTFRAME_MASK;
 
+		// Reset Flags
 		rxHeartbeatSBUS = false;
+		dataSBUS.inputLost = false;
 		prev = now;
 	}
 
@@ -129,14 +131,10 @@ void SBUS_Update (void)
 	{
 		dataSBUS.inputLost = true;
 	}
-	else
+	else if (!dataSBUS.inputLost && SBUS_TIMEOUT_FS <= (now - prev))
 	{
-		if (SBUS_TIMEOUT_FS <= (now - prev)) {
-			dataSBUS.inputLost = true;
-			memset(rxSBUS, 0, sizeof(rxSBUS));
-		} else {
-			dataSBUS.inputLost = false;
-		}
+		dataSBUS.inputLost = true;
+		memset(rxSBUS, 0, sizeof(rxSBUS));
 	}
 }
 

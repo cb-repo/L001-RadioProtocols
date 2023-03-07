@@ -73,6 +73,7 @@ void PPM_Deinit (void)
 
 void PPM_Update (void)
 {
+	// Init Loop Variables
 	uint32_t now = CORE_GetTick();
 	static uint32_t prev = 0;
 
@@ -84,16 +85,16 @@ void PPM_Update (void)
 		{
 			dataPPM.ch[i] = PPM_Truncate(rxPPM[i]);
 		}
+		// Reset Flags
 		rxHeartbeatPPM = false;
+		dataPPM.inputLost = false;
 		prev = now;
 	}
 
 	// Check for Input Failsafe
-	if (PPM_TIMEOUT <= (now - prev)) {
+	if (!dataPPM.inputLost && PPM_TIMEOUT <= (now - prev)) {
 		dataPPM.inputLost = true;
 		PPM_memset();
-	} else {
-		dataPPM.inputLost = false;
 	}
 }
 

@@ -94,42 +94,39 @@ void PWM_Deinit (void)
 
 void PWM_Update (void)
 {
+	// Init Loop Variables
 	uint32_t now = CORE_GetTick();
-	static uint32_t prev = 0;
+	static uint32_t tick = 0;
 
-	// Check for New Input Data
-	if (rxHeartbeatPWM[0] || rxHeartbeatPWM [1] || rxHeartbeatPWM [2] || rxHeartbeatPWM [3])
+	// Check For New Input Data
+	for (uint8_t ch = 0; ch < PWM_NUM_CHANNELS; ch++)
 	{
-		// Average and Assign Input to data Struct
-		for (uint8_t j = 0; j < PWM_NUM_CHANNELS; j++)
+		if (rxHeartbeatPWM[ch])
 		{
+			// Average Data over Input Jitter Array
 			uint8_t avg = 0;
-			uint32_t ch = 0;
+			uint32_t inter = 0;
 			for (uint8_t i = 0; i < PWM_JITTER_ARRAY; i++)
 			{
-				uint16_t trunc = PWM_Truncate(rxPWM[i][j]);
+				uint16_t trunc = PWM_Truncate(rxPWM[i][ch]);
 				if (trunc != 0)
 				{
-					ch += trunc;
+					inter += trunc;
 					avg += 1;
 				}
 			}
-			ch /= avg;
-			dataPWM.ch[j] = ch;
+			dataPWM.ch[ch] = inter / avg;
+			// Reset Flags
+			rxHeartbeatPWM[ch] = false;
+			dataPWM.inputLost = false;
+			tick = now;
 		}
-		rxHeartbeatPWM[0] = false;
-		rxHeartbeatPWM[1] = false;
-		rxHeartbeatPWM[2] = false;
-		rxHeartbeatPWM[3] = false;
-		prev = now;
 	}
 
 	// Check for Input Failsafe
-	if (PWM_TIMEOUT <= (now - prev)) {
+	if (!dataPWM.inputLost && PWM_TIMEOUT <= (now - tick)) {
 		dataPWM.inputLost = true;
 		PWM_memset();
-	} else {
-		dataPWM.inputLost = false;
 	}
 }
 
