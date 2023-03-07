@@ -41,11 +41,11 @@ void RADIO_Detect (RADIO_Properties * r)
 	while (1)
 	{
 		uint32_t now = CORE_GetTick();
-//		if (PPM_Detect())
-//		{
-//			r->Protocol = PPM;
-//			break;
-//		}
+		if (PPM_Detect())
+		{
+			r->Protocol = PPM;
+			break;
+		}
 
 		if (SBUS_Detect(SBUS_BAUD))
 		{

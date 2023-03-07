@@ -8,7 +8,7 @@
 
 #define PPM_EOF_TIME		4000
 #define PPM_JITTER_ARRAY	3
-#define PPM_THRESHOLD		500
+#define PPM_THRESHOLD		100
 #define PPM_TIMEOUT_CYCLES	3
 #define PPM_TIMEOUT			(PPM_PERIOD * PPM_TIMEOUT_CYCLES)
 
@@ -28,7 +28,7 @@ void PPM_IRQ (void);
  * PRIVATE VARIABLES
  */
 
-volatile uint16_t rxPPM[PPM_JITTER_ARRAY][PPM_NUM_CHANNELS] = {0};
+volatile uint16_t rxPPM[PPM_NUM_CHANNELS] = {0};
 volatile bool rxHeartbeatPPM = false;
 PPM_Data dataPPM = {0};
 
@@ -78,22 +78,10 @@ void PPM_Update (void)
 	// Check for New Input Data
 	if (rxHeartbeatPPM)
 	{
-		// Average and Assign Input to data Struct
-		for (uint8_t j = 0; j < PPM_NUM_CHANNELS; j++)
+		// Assign Input to data Struct
+		for (uint8_t i = 0; i < PPM_NUM_CHANNELS; i++)
 		{
-			uint8_t avg = 0;
-			uint32_t ch = 0;
-			for (uint8_t i = 0; i < PPM_JITTER_ARRAY; i++)
-			{
-				uint16_t trunc = PPM_Truncate(rxPPM[i][j]);
-				if (trunc != 0)
-				{
-					ch += trunc;
-					avg += 1;
-				}
-			}
-			ch /= avg;
-			dataPPM.ch[j] = ch;
+			dataPPM.ch[i] = PPM_Truncate(rxPPM[i]);
 		}
 		rxHeartbeatPPM = false;
 		prev = now;
@@ -140,12 +128,9 @@ uint16_t PPM_Truncate (uint16_t r)
 
 void PPM_memset (void)
 {
-	for (uint8_t j = 0; j < PPM_NUM_CHANNELS; j++)
+	for (uint8_t i = 0; i < PPM_NUM_CHANNELS; i++)
 	{
-		for (uint8_t i = 0; i < PPM_JITTER_ARRAY; i++)
-		{
-			rxPPM[i][j] = 0;
-		}
+		rxPPM[i] = 0;
 	}
 }
 
@@ -157,38 +142,42 @@ void PPM_memset (void)
 void PPM_IRQ (void)
 {
 	uint16_t now = TIM_Read(PPM_TIM);	// Current IRQ Loop Time
-	static uint16_t prev = 0;			// Previous IRQ Loop Time
 	uint16_t pulse = 0;					// Pulse Width
+	static uint16_t tick = 0;			// Previous IRQ Loop Time
 	static uint8_t ch = 0;				// Channel Index
-	static uint8_t jitter = 0;			// Jitter-Smoothing Array Index
+	static bool sync = false;			// Sync Flag to Indicate Start of Transmission
 
 	// Calculate the Pulse Width
-	pulse = now - prev;
+	pulse = now - tick;
 
 	// Check for Channel 1 Synchronization
 	if (pulse > PPM_EOF_TIME)
 	{
 		ch = 0;
+		sync = true;
+	}
+	// Assign Pulse to Channel
+	else if (sync)
+	{
+		// Check for valid pulse
+		if (pulse <= (PPM_MAX + PPM_THRESHOLD) && pulse >= (PPM_MIN - PPM_THRESHOLD)) {
+			rxPPM[ch] = pulse;
+			ch += 1;
+		} else { // Pulse train is corrupted. Abort transmission.
+			sync = false;
+		}
+		// If on Last Channel
+		if (ch >= (PPM_NUM_CHANNELS - 1))
+		{
+			rxHeartbeatPPM = true;
+			sync = false;
+		}
+
 	}
 
-	// Check for any Additional (Unsupported) Channels
-	if (ch < PPM_NUM_CHANNELS)
-	{
-		// Assign Pulse to Correct Channel
-		rxPPM[jitter][ch] = pulse;
-		// Prep Variables for Next Loop
-		prev = now;
-		ch += 1;
-		// Evaluate on last loop
-		if (ch == (PPM_NUM_CHANNELS - 1))
-		{
-			// Kick Heartbeat
-			rxHeartbeatPPM = true;
-			//Increment Jitter Array Index
-			jitter += 1;
-			if (jitter >= PPM_JITTER_ARRAY) { jitter = 0; }
-		}
-	}
+	// Set variables for next loop
+	tick = now;
+
 }
 
 
