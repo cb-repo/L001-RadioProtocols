@@ -20,9 +20,10 @@
  * PRIVATE PROTOTYPES
  */
 
-uint16_t PPM_Truncate (uint16_t);
-void PPM_memset (void);
-void PPM_IRQ (void);
+uint32_t 	PPM_Truncate	( uint32_t );
+void 		PPM_memset 		( void );
+
+void 		PPM_IRQ 		( void );
 
 /*
  * PRIVATE VARIABLES
@@ -107,9 +108,9 @@ PPM_Data* PPM_GetDataPtr (void)
  * PRIVATE FUNCTIONS
  */
 
-uint16_t PPM_Truncate (uint16_t r)
+uint32_t PPM_Truncate (uint32_t r)
 {
-	uint16_t retVal = 0;
+	uint32_t retVal = 0;
 
 	if (r == 0) {
 		retVal = 0;
@@ -143,9 +144,9 @@ void PPM_memset (void)
 
 void PPM_IRQ (void)
 {
-	uint16_t now = TIM_Read(PPM_TIM);	// Current IRQ Loop Time
-	uint16_t pulse = 0;					// Pulse Width
-	static uint16_t tick = 0;			// Previous IRQ Loop Time
+	uint32_t now = TIM_Read(PPM_TIM);	// Current IRQ Loop Time
+	uint32_t pulse = 0;					// Pulse Width
+	static uint32_t tick = 0;			// Previous IRQ Loop Time
 	static uint8_t ch = 0;				// Channel Index
 	static bool sync = false;			// Sync Flag to Indicate Start of Transmission
 

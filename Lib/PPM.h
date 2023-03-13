@@ -25,7 +25,7 @@
 
 typedef struct {
 	bool inputLost;
-	int16_t ch[PPM_NUM_CHANNELS];
+	uint32_t ch[PPM_NUM_CHANNELS];
 } PPM_Data;
 
 /*

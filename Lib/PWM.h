@@ -31,7 +31,7 @@
 typedef struct {
 	bool inputLost;
 	bool inputLostCh[PWM_NUM_CHANNELS];
-	int16_t ch[PWM_NUM_CHANNELS];
+	uint32_t ch[PWM_NUM_CHANNELS];
 } PWM_Data;
 
 /*

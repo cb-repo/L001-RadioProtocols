@@ -27,7 +27,7 @@
 
 typedef struct {
 	bool inputLost;
-	int16_t ch[IBUS_NUM_CHANNELS];
+	uint32_t ch[IBUS_NUM_CHANNELS];
 } IBUS_Data;
 
 /*
