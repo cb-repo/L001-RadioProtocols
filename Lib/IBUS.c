@@ -35,7 +35,7 @@
  * PRIVATE PROTOTYPES
  */
 
-uint16_t	IBUS_Truncate	( uint16_t );
+uint32_t	IBUS_Truncate	( uint32_t );
 bool 		IBUS_Checksum	( void );
 void 		IBUS_HandleUART	( void );
 
@@ -96,7 +96,7 @@ void IBUS_Update (void)
 		uint8_t ch = 0;
 		for (uint8_t i = IBUS_DATA_INDEX; i < (IBUS_PAYLOAD_LEN - IBUS_CHECKSUM_LEN); i += 2)
 		{
-			uint16_t trunc = (int16_t)(rxIBUS[i] | rxIBUS[i+1] << 8);
+			uint32_t trunc = (int32_t)(rxIBUS[i] | rxIBUS[i+1] << 8);
 			dataIBUS.ch[ch] = IBUS_Truncate(trunc);
 			ch += 1;
 		}
@@ -122,9 +122,9 @@ IBUS_Data* IBUS_GetDataPtr (void)
  * PRIVATE FUNCTIONS
  */
 
-uint16_t IBUS_Truncate (uint16_t r)
+uint32_t IBUS_Truncate (uint32_t r)
 {
-	uint16_t retVal = 0;
+	uint32_t retVal = 0;
 
 	if (r == 0) {
 		retVal = 0;
@@ -147,8 +147,8 @@ bool IBUS_Checksum ( void )
 {
 	bool retVal = false;
 
-	uint16_t cs = (int16_t)(rxIBUS[IBUS_CHECKSUM_INDEX] | (int16_t)rxIBUS[IBUS_CHECKSUM_INDEX + 1] << 8);
-	uint16_t check = IBUS_CHECKSUM_START;
+	uint32_t cs = (int32_t)(rxIBUS[IBUS_CHECKSUM_INDEX] | (int32_t)rxIBUS[IBUS_CHECKSUM_INDEX + 1] << 8);
+	uint32_t check = IBUS_CHECKSUM_START;
 	check -= IBUS_HEADER1;
 	check -= IBUS_HEADER2;
 	for (uint8_t i = IBUS_DATA_INDEX; i < IBUS_CHECKSUM_INDEX; i++)

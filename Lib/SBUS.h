@@ -40,7 +40,7 @@ typedef struct {
 	bool failsafe;
 	bool ch17;
 	bool ch18;
-	int16_t ch[SBUS_NUM_CHANNELS];
+	uint32_t ch[SBUS_NUM_CHANNELS];
 } SBUS_Data;
 
 /*

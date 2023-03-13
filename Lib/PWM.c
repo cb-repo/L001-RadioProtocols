@@ -8,7 +8,7 @@
 
 #define PWM_EOF_TIME			4000
 #define PWM_JITTER_ARRAY		3
-#define PWM_THRESHOLD		100
+#define PWM_THRESHOLD			100
 #define PWM_TIMEOUT_CYCLES		3
 #define PWM_TIMEOUT				(PWM_PERIOD * PWM_TIMEOUT_CYCLES)
 
@@ -20,18 +20,19 @@
  * PRIVATE PROTOTYPES
  */
 
-uint16_t PWM_Truncate (uint16_t);
-void PWM_memset (void);
-void PWM1_IRQ (void);
-void PWM2_IRQ (void);
-void PWM3_IRQ (void);
-void PWM4_IRQ (void);
+uint32_t	PWM_Truncate	( uint32_t );
+void 		PWM_memset 		( void );
+
+void 		PWM1_IRQ 		( void );
+void 		PWM2_IRQ 		( void );
+void 		PWM3_IRQ 		( void );
+void 		PWM4_IRQ 		( void );
 
 /*
  * PRIVATE VARIABLES
  */
 
-volatile uint16_t rxPWM[PWM_NUM_CHANNELS] = {0};
+volatile uint32_t rxPWM[PWM_NUM_CHANNELS] = {0};
 volatile bool rxHeartbeatPWM[PWM_NUM_CHANNELS] = {0};
 PWM_Data dataPWM = {0};
 
@@ -152,9 +153,9 @@ PWM_Data* PWM_GetDataPtr (void)
  * PRIVATE FUNCTIONS
  */
 
-uint16_t PWM_Truncate (uint16_t r)
+uint32_t PWM_Truncate (uint32_t r)
 {
-	uint16_t retVal = 0;
+	uint32_t retVal = 0;
 
 	if (r == 0) {
 		retVal = 0;
