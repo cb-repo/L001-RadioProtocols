@@ -1,7 +1,9 @@
+
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 #ifndef RADIO_H
 #define RADIO_H
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
 
 #include "STM32X.h"
 #include "PWM.h"
@@ -9,23 +11,33 @@
 #include "SBUS.h"
 #include "IBUS.h"
 
+
 /*
  * PUBLIC DEFINITIONS
  */
 
-#define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
-#define MAX(X, Y) (((X) > (Y)) ? (X) : (Y))
 
-#define RADIO_NUM_CHANNELS	MAX( MAX(PWM_NUM_CHANNELS, PPM_NUM_CHANNELS), MAX(IBUS_NUM_CHANNELS, SBUS_NUM_CHANNELS) )
+#define RADIO_MIN(X, Y) 		(((X) < (Y)) ? (X) : (Y))
+#define RADIO_MAX(X, Y) 		(((X) > (Y)) ? (X) : (Y))
 
-#define RADIO_MIN		1000
-#define RADIO_CENTER	1500
-#define RADIO_MAX		2000
-#define RADIO_HALFSCALE	(RADIO_MAX - RADIO_CENTER)
+#define RADIO_GETBIT(var, bit) 	(((var) >> (bit)) & 1)
+#define RADIO_SETBIT(var, bit) 	(var |= (1 << (bit)))
+#define RADIO_RSTBIT(var, bit)	(var &= (~(1 << (bit))))
+
+#define RADIO_NUM_CHANNELS		(RADIO_MAX( RADIO_MAX(PWM_NUM_CHANNELS, PPM_NUM_CHANNELS), RADIO_MAX(IBUS_NUM_CHANNELS, SBUS_NUM_CHANNELS) ))
+
+#define RADIO_CH_MIN			1000
+#define RADIO_CH_CENTER			1500
+#define RADIO_CH_MAX			2000
+
+#define RADIO_CH_HALFSCALE		(RADIO_CH_MAX - RADIO_CH_CENTER)
+#define RADIO_CH_FULLSCALE		(RADIO_CH_MAX - RADIO_CH_MIN)
+
 
 /*
  * PUBLIC TYPES
  */
+
 
 typedef enum {
 	PPM,
@@ -34,22 +46,23 @@ typedef enum {
 	PWM,
 } RADIO_Protocols;
 
+typedef enum {
+	chActive_False,
+	chActive_True,
+	chActive_TrueRev,
+} RADIO_ChannelActiveFlags;
+
 typedef struct {
-	bool inputLost;
-	uint8_t ch_num;
-	int16_t ch[RADIO_NUM_CHANNELS];
+	bool 						inputLost;
+	uint8_t 					ch_num;
+	uint32_t 					ch[RADIO_NUM_CHANNELS];
+	uint32_t					chZero[RADIO_NUM_CHANNELS];
+	RADIO_ChannelActiveFlags	chActive[RADIO_NUM_CHANNELS];
 } RADIO_Data;
 
-typedef union {
-	PWM_Data* pwm;
-	PPM_Data* ppm;
-	IBUS_Data* ibus;
-	SBUS_Data* sbus;
-} RADIO_ptrData;
-
 typedef struct {
-	uint32_t Baud_SBUS;
-	RADIO_Protocols Protocol;
+	uint32_t 		Baud_SBUS;
+	RADIO_Protocols	Protocol;
 } RADIO_Properties;
 
 
@@ -57,14 +70,18 @@ typedef struct {
  * PUBLIC FUNCTIONS
  */
 
-bool RADIO_DetectNew (RADIO_Properties *);
-void RADIO_Init (RADIO_Properties *);
-void RADIO_Update (void);
-RADIO_Data* RADIO_GetDataPtr (void);
+
+bool		RADIO_DetectNew					( RADIO_Properties * );
+void 		RADIO_Init 						( RADIO_Properties * );
+void 		RADIO_Update 					( void );
+RADIO_Data*	RADIO_GetDataPtr				( void );
+void		RADIO_SetChannelZeroPosition	( void );
+
 
 /*
  * EXTERN DECLARATIONS
  */
+
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 #endif /* RADIO_H */
