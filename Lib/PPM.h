@@ -7,6 +7,7 @@
 #include "Core.h"
 #include "GPIO.h"
 #include "TIM.h"
+#include "US.h"
 
 /*
  * PUBLIC DEFINITIONS
@@ -32,7 +33,7 @@ typedef struct {
  * PUBLIC FUNCTIONS
  */
 
-bool PPM_Detect(void);
+bool PPM_DetInit (void);
 void PPM_Init (void);
 void PPM_Deinit (void);
 void PPM_Update (void);

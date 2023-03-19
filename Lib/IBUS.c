@@ -51,25 +51,29 @@ IBUS_Data dataIBUS = {0};
  * PUBLIC FUNCTIONS
  */
 
-bool IBUS_Detect(void)
+bool IBUS_DetInit(void)
 {
 	IBUS_Init();
 
 	uint32_t tick = CORE_GetTick();
 	while ((IBUS_TIMEOUT_FS * 2) > CORE_GetTick() - tick)
 	{
-		IBUS_HandleUART();
+		IBUS_Update();
 		CORE_Idle();
 	}
 
-	IBUS_Deinit();
+	if ( dataIBUS.inputLost )
+	{
+		IBUS_Deinit();
+	}
 
-	return rxHeartbeatIBUS;
+	return !dataIBUS.inputLost;
 }
 
 void IBUS_Init (void)
 {
 	memset(rxIBUS, 0, sizeof(rxIBUS));
+	rxHeartbeatIBUS = false;
 	dataIBUS.inputLost = true;
 
 	UART_Init(IBUS_UART, IBUS_BAUD, UART_Mode_Default);

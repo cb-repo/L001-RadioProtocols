@@ -37,7 +37,7 @@ PPM_Data dataPPM = {0};
  * PUBLIC FUNCTIONS
  */
 
-bool PPM_Detect (void)
+bool PPM_DetInit (void)
 {
 	PPM_Init();
 
@@ -47,7 +47,10 @@ bool PPM_Detect (void)
 		CORE_Idle();
 	}
 
-	PPM_Deinit();
+	if ( !rxHeartbeatPPM )
+	{
+		PPM_Deinit();
+	}
 
 	return rxHeartbeatPPM;
 }
@@ -55,6 +58,7 @@ bool PPM_Detect (void)
 void PPM_Init (void)
 {
 	PPM_memset();
+	rxHeartbeatPPM = false;
 	dataPPM.inputLost = true;
 
 	TIM_Init(PPM_TIM, PPM_TIM_FREQ, PPM_TIM_RELOAD);
@@ -77,19 +81,33 @@ void PPM_Update (void)
 	// Init Loop Variables
 	uint32_t now = CORE_GetTick();
 	static uint32_t prev = 0;
-
+	static uint32_t ch_p[PPM_NUM_CHANNELS];
 	// Check for New Input Data
 	if (rxHeartbeatPPM)
 	{
 		// Assign Input to data Struct
 		for (uint8_t i = 0; i < PPM_NUM_CHANNELS; i++)
 		{
+			ch_p[i] = dataPPM.ch[i];
 			dataPPM.ch[i] = PPM_Truncate(rxPPM[i]);
 		}
+
 		// Reset Flags
 		rxHeartbeatPPM = false;
 		dataPPM.inputLost = false;
 		prev = now;
+	}
+
+	// Assign Input to data Struct
+	for (uint8_t i = 0; i < PPM_NUM_CHANNELS; i++)
+	{
+		if ( dataPPM.ch[i] != 0 &&
+			 ((dataPPM.ch[i] >= (ch_p[i] + 20)) ||
+			 (dataPPM.ch[i] <= (ch_p[i] - 20))))
+		{
+ 			int32_t a = dataPPM.ch[i] - ch_p[i];
+			rxHeartbeatPPM = false;
+		}
 	}
 
 	// Check for Input Failsafe
@@ -170,7 +188,7 @@ void PPM_IRQ (void)
 			sync = false;
 		}
 		// If on Last Channel
-		if (ch >= (PPM_NUM_CHANNELS - 1))
+		if (ch >= PPM_NUM_CHANNELS)
 		{
 			rxHeartbeatPPM = true;
 			sync = false;

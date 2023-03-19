@@ -56,6 +56,7 @@ typedef struct {
 	bool 						inputLost;
 	uint8_t 					ch_num;
 	uint32_t 					ch[RADIO_NUM_CHANNELS];
+	bool						chZeroSet;
 	uint32_t					chZero[RADIO_NUM_CHANNELS];
 	RADIO_ChannelActiveFlags	chActive[RADIO_NUM_CHANNELS];
 } RADIO_Data;
@@ -71,7 +72,7 @@ typedef struct {
  */
 
 
-bool		RADIO_DetectNew					( RADIO_Properties * );
+bool		RADIO_DetInit					( RADIO_Properties * );
 void 		RADIO_Init 						( RADIO_Properties * );
 void 		RADIO_Update 					( void );
 RADIO_Data*	RADIO_GetDataPtr				( void );

@@ -39,7 +39,7 @@
  * PRIVATE PROTOTYPES
  */
 
-uint32_t 	SBUS_Transform 	( uint32_t );
+uint16_t 	SBUS_Transform 	( uint16_t );
 void 		SBUS_HandleUART ( void );
 
 /*
@@ -54,25 +54,29 @@ SBUS_Data dataSBUS = {0};
  * PUBLIC FUNCTIONS
  */
 
-bool SBUS_Detect(uint32_t baud)
+bool SBUS_DetInit(uint32_t baud)
 {
 	SBUS_Init(baud);
 
 	uint32_t tick = CORE_GetTick();
 	while ((SBUS_TIMEOUT_FS * 2) > CORE_GetTick() - tick)
 	{
-		SBUS_HandleUART();
+		SBUS_Update();
 		CORE_Idle();
 	}
 
-	SBUS_Deinit();
+	if ( dataSBUS.inputLost )
+	{
+		SBUS_Deinit();
+	}
 
-	return rxHeartbeatSBUS;
+	return !dataSBUS.inputLost;
 }
 
 void SBUS_Init (uint32_t baud)
 {
 	memset(rxSBUS, 0, sizeof(rxSBUS));
+	rxHeartbeatSBUS = false;
 	dataSBUS.inputLost = true;
 
 	UART_Init(SBUS_UART, baud, UART_Mode_Inverted);
@@ -97,23 +101,23 @@ void SBUS_Update (void)
 	if (rxHeartbeatSBUS)
 	{
 		// Decode SBUS Data
-		dataSBUS.ch[0]  = SBUS_Transform( (int32_t)( (rxSBUS[1]		  | rxSBUS[2] << 8 ) & 0x07FF) );
-		dataSBUS.ch[1]  = SBUS_Transform( (int32_t)( (rxSBUS[2]  >> 3 | rxSBUS[3] << 5 ) & 0x07FF) );
-		dataSBUS.ch[2]  = SBUS_Transform( (int32_t)( (rxSBUS[3]  >> 6 | rxSBUS[4] << 2  | rxSBUS[5] << 10 ) & 0x07FF) );
-		dataSBUS.ch[3]  = SBUS_Transform( (int32_t)( (rxSBUS[5]  >> 1 | rxSBUS[6] << 7 ) & 0x07FF) );
-		dataSBUS.ch[4]  = SBUS_Transform( (int32_t)( (rxSBUS[6]  >> 4 | rxSBUS[7] << 4 ) & 0x07FF) );
-		dataSBUS.ch[5]  = SBUS_Transform( (int32_t)( (rxSBUS[7]  >> 7 | rxSBUS[8] << 1 | rxSBUS[9] << 9 ) & 0x07FF) );
-		dataSBUS.ch[6]  = SBUS_Transform( (int32_t)( (rxSBUS[9]  >> 2 | rxSBUS[10] << 6 ) & 0x07FF) );
-		dataSBUS.ch[7]  = SBUS_Transform( (int32_t)( (rxSBUS[10] >> 5 | rxSBUS[11] << 3 ) & 0x07FF) );
+		dataSBUS.ch[0]  = SBUS_Transform( (int16_t)( (rxSBUS[1]	   | rxSBUS[2] << 8 ) 					 & 0x07FF) );
+		dataSBUS.ch[1]  = SBUS_Transform( (int16_t)( (rxSBUS[2]  >> 3 | rxSBUS[3] << 5 ) 					 & 0x07FF) );
+		dataSBUS.ch[2]  = SBUS_Transform( (int16_t)( (rxSBUS[3]  >> 6 | rxSBUS[4] << 2  | rxSBUS[5] << 10 ) & 0x07FF) );
+		dataSBUS.ch[3]  = SBUS_Transform( (int16_t)( (rxSBUS[5]  >> 1 | rxSBUS[6] << 7 ) 					 & 0x07FF) );
+		dataSBUS.ch[4]  = SBUS_Transform( (int16_t)( (rxSBUS[6]  >> 4 | rxSBUS[7] << 4 ) 					 & 0x07FF) );
+		dataSBUS.ch[5]  = SBUS_Transform( (int16_t)( (rxSBUS[7]  >> 7 | rxSBUS[8] << 1 | rxSBUS[9] << 9 )   & 0x07FF) );
+		dataSBUS.ch[6]  = SBUS_Transform( (int16_t)( (rxSBUS[9]  >> 2 | rxSBUS[10] << 6 ) 				     & 0x07FF) );
+		dataSBUS.ch[7]  = SBUS_Transform( (int16_t)( (rxSBUS[10] >> 5 | rxSBUS[11] << 3 ) 				     & 0x07FF) );
 
-		dataSBUS.ch[8]  = SBUS_Transform( (int32_t)( (rxSBUS[12]		 | rxSBUS[13] << 8 ) & 0x07FF) );
-		dataSBUS.ch[9]  = SBUS_Transform( (int32_t)( (rxSBUS[13] >> 3 | rxSBUS[14] << 5 ) & 0x07FF) );
-		dataSBUS.ch[10] = SBUS_Transform( (int32_t)( (rxSBUS[14] >> 6 | rxSBUS[15] << 2  | rxSBUS[16] << 10 ) & 0x07FF) );
-		dataSBUS.ch[11] = SBUS_Transform( (int32_t)( (rxSBUS[16] >> 1 | rxSBUS[17] << 7 ) & 0x07FF) );
-		dataSBUS.ch[12] = SBUS_Transform( (int32_t)( (rxSBUS[17] >> 4 | rxSBUS[18] << 4 ) & 0x07FF) );
-		dataSBUS.ch[13] = SBUS_Transform( (int32_t)( (rxSBUS[18] >> 7 | rxSBUS[19] << 1 | rxSBUS[20]) & 0x07FF) );
-		dataSBUS.ch[14] = SBUS_Transform( (int32_t)( (rxSBUS[20] >> 2 | rxSBUS[21] << 6 ) & 0x07FF) );
-		dataSBUS.ch[15] = SBUS_Transform( (int32_t)( (rxSBUS[21] >> 5 | rxSBUS[22] << 3 ) & 0x07FF) );
+		dataSBUS.ch[8]  = SBUS_Transform( (int16_t)( (rxSBUS[12]	   | rxSBUS[13] << 8 ) 					   & 0x07FF) );
+		dataSBUS.ch[9]  = SBUS_Transform( (int16_t)( (rxSBUS[13] >> 3 | rxSBUS[14] << 5 ) 					   & 0x07FF) );
+		dataSBUS.ch[10] = SBUS_Transform( (int16_t)( (rxSBUS[14] >> 6 | rxSBUS[15] << 2  | rxSBUS[16] << 10 ) & 0x07FF) );
+		dataSBUS.ch[11] = SBUS_Transform( (int16_t)( (rxSBUS[16] >> 1 | rxSBUS[17] << 7 ) 					   & 0x07FF) );
+		dataSBUS.ch[12] = SBUS_Transform( (int16_t)( (rxSBUS[17] >> 4 | rxSBUS[18] << 4 ) 					   & 0x07FF) );
+		dataSBUS.ch[13] = SBUS_Transform( (int16_t)( (rxSBUS[18] >> 7 | rxSBUS[19] << 1 | rxSBUS[20] ) 	   & 0x07FF) );
+		dataSBUS.ch[14] = SBUS_Transform( (int16_t)( (rxSBUS[20] >> 2 | rxSBUS[21] << 6 )   				   & 0x07FF) );
+		dataSBUS.ch[15] = SBUS_Transform( (int16_t)( (rxSBUS[21] >> 5 | rxSBUS[22] << 3 ) 					   & 0x07FF) );
 
 		dataSBUS.ch17      = rxSBUS[23] & SBUS_CH17_MASK;
 		dataSBUS.ch17      = rxSBUS[23] & SBUS_CH18_MASK;
@@ -147,7 +151,7 @@ SBUS_Data* SBUS_GetDataPtr (void)
  * PRIVATE FUNCTIONS
  */
 
-uint32_t SBUS_Transform (uint32_t r)
+uint16_t SBUS_Transform (uint16_t r)
 {
 	uint32_t retVal = 0;
 
@@ -173,7 +177,7 @@ uint32_t SBUS_Transform (uint32_t r)
 		retVal -= (SBUS_MIN * SBUS_MAP_RANGE / SBUS_RANGE);
 	}
 
-	return (uint32_t)retVal;
+	return (uint16_t)retVal;
 }
 
 

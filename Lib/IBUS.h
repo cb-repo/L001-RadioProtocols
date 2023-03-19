@@ -7,6 +7,7 @@
 #include "Core.h"
 #include "UART.h"
 #include "GPIO.h"
+#include "US.h"
 
 /*
  * PUBLIC DEFINITIONS
@@ -34,7 +35,7 @@ typedef struct {
  * PUBLIC FUNCTIONS
  */
 
-bool IBUS_Detect(void);
+bool IBUS_DetInit(void);
 void IBUS_Init (void);
 void IBUS_Deinit (void);
 void IBUS_Update (void);

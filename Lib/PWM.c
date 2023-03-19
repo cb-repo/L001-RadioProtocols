@@ -8,9 +8,10 @@
 
 #define PWM_EOF_TIME			4000
 #define PWM_JITTER_ARRAY		3
-#define PWM_THRESHOLD			100
+#define PWM_THRESHOLD_PULSE		100		// [us]
+#define PWM_THRESHOLD_PERIOD	1000	// [us]
 #define PWM_TIMEOUT_CYCLES		3
-#define PWM_TIMEOUT				(PWM_PERIOD * PWM_TIMEOUT_CYCLES)
+#define PWM_TIMEOUT				(PWM_PERIOD_MS * PWM_TIMEOUT_CYCLES)
 
 /*
  * PRIVATE TYPES
@@ -40,7 +41,7 @@ PWM_Data dataPWM = {0};
  * PUBLIC FUNCTIONS
  */
 
-bool PWM_Detect(void)
+bool PWM_DetInit(void)
 {
 	// Init Loop Variables
 	bool retVal = false;
@@ -51,11 +52,15 @@ bool PWM_Detect(void)
 	while ((PWM_TIMEOUT * 2) > CORE_GetTick() - tick) {
 		CORE_Idle();
 	}
-	PWM_Deinit();
 
 	// Consolidate Heartbeats to Single retVal
 	for (uint8_t ch = 0; ch < PWM_NUM_CHANNELS; ch++) {
 		retVal |= rxHeartbeatPWM[ch];
+	}
+
+	if ( !retVal )
+	{
+		PWM_Deinit();
 	}
 
 	return retVal;
@@ -68,6 +73,7 @@ void PWM_Init ()
 	// Assume No Radio Signal on Init
 	dataPWM.inputLost = true;
 	for (uint8_t ch = 0; ch < PWM_NUM_CHANNELS; ch++) {
+		rxHeartbeatPWM[ch] = false;
 		dataPWM.inputLostCh[ch] = true;
 	}
 
@@ -134,12 +140,12 @@ void PWM_Update (void)
 	//
 	for (uint8_t ch = 0; ch < PWM_NUM_CHANNELS; ch++)
 	{
-		if (!dataPWM.inputLostCh[ch]) {
-			dataPWM.inputLost = false;
+		if (dataPWM.inputLostCh[ch]) {
+			dataPWM.inputLost = true;
 			break;
 		}
 		if (ch == (PWM_NUM_CHANNELS - 1)) {
-			dataPWM.inputLost = true;
+			dataPWM.inputLost = false;
 		}
 	}
 }
@@ -159,13 +165,13 @@ uint32_t PWM_Truncate (uint32_t r)
 
 	if (r == 0) {
 		retVal = 0;
-	} else if (r < (PWM_MIN - PWM_THRESHOLD)) {
+	} else if (r < (PWM_MIN - PWM_THRESHOLD_PULSE)) {
 		retVal = 0;
 	} else if (r < PWM_MIN) {
 		retVal = PWM_MIN;
 	} else if (r <= PWM_MAX) {
 		retVal = r;
-	} else if (r < (PWM_MAX + PWM_THRESHOLD))	{
+	} else if (r < (PWM_MAX + PWM_THRESHOLD_PULSE))	{
 		retVal = PWM_MAX;
 	} else {
 		retVal = 0;
@@ -193,19 +199,28 @@ void PWM1_IRQ (void)
 	// Init Loop Variables
 	uint32_t now = TIM_Read(TIM_RADIO);
 	uint32_t pulse = 0;
-	static uint32_t tick = 0;
+	uint32_t period = 0;
+	static uint32_t tickHigh = 0;
+	static uint32_t tickLow = 0;
 
 	if (GPIO_Read(PWM_S1_GPIO, PWM_S1_PIN))
 	{
 		// Assign Variables for Next Loop
-		tick = now;
+		tickHigh = now;
 	}
 	else
 	{
+		//
+		period = now - tickLow;
+		//
+		tickLow = now;
 		// Calculate Signal Data
-		pulse = now - tick;
+		pulse = now - tickHigh;
 		// Check Pulse is Valid
-		if ( pulse <= (PWM_MAX + PWM_THRESHOLD) && pulse >= (PWM_MIN - PWM_THRESHOLD) ) {
+		if ( pulse <= (PWM_MAX + PWM_THRESHOLD_PULSE) &&
+			 pulse >= (PWM_MIN - PWM_THRESHOLD_PULSE) &&
+			 period <= (PWM_PERIOD_US + PWM_THRESHOLD_PERIOD) &&
+			 period >= (PWM_PERIOD_US - PWM_THRESHOLD_PERIOD) ) {
 			// Assign Pulse to Data Array
 			rxPWM[PWM_CH1] = pulse;
 			// Trigger New Data Flag
@@ -219,19 +234,28 @@ void PWM2_IRQ (void)
 	// Init Loop Variables
 	uint32_t now = TIM_Read(TIM_RADIO);
 	uint32_t pulse = 0;
-	static uint32_t tick = 0;
+	uint32_t period = 0;
+	static uint32_t tickHigh = 0;
+	static uint32_t tickLow = 0;
 
 	if (GPIO_Read(PWM_S2_GPIO, PWM_S2_PIN))
 	{
 		// Assign Variables for Next Loop
-		tick = now;
+		tickHigh = now;
 	}
 	else
 	{
+		//
+		period = now - tickLow;
+		//
+		tickLow = now;
 		// Calculate Signal Data
-		pulse = now - tick;
+		pulse = now - tickHigh;
 		// Check Pulse is Valid
-		if ( pulse <= (PWM_MAX + PWM_THRESHOLD) && pulse >= (PWM_MIN - PWM_THRESHOLD) ) {
+		if ( pulse <= (PWM_MAX + PWM_THRESHOLD_PULSE) &&
+			 pulse >= (PWM_MIN - PWM_THRESHOLD_PULSE) &&
+			 period <= (PWM_PERIOD_US + PWM_THRESHOLD_PERIOD) &&
+			 period >= (PWM_PERIOD_US - PWM_THRESHOLD_PERIOD) ) {
 			// Assign Pulse to Data Array
 			rxPWM[PWM_CH2] = pulse;
 			// Trigger New Data Flag
@@ -245,19 +269,28 @@ void PWM3_IRQ (void)
 	// Init Loop Variables
 	uint32_t now = TIM_Read(TIM_RADIO);
 	uint32_t pulse = 0;
-	static uint32_t tick = 0;
+	uint32_t period = 0;
+	static uint32_t tickHigh = 0;
+	static uint32_t tickLow = 0;
 
 	if (GPIO_Read(PWM_S3_GPIO, PWM_S3_PIN))
 	{
 		// Assign Variables for Next Loop
-		tick = now;
+		tickHigh = now;
 	}
 	else
 	{
+		//
+		period = now - tickLow;
+		//
+		tickLow = now;
 		// Calculate Signal Data
-		pulse = now - tick;
+		pulse = now - tickHigh;
 		// Check Pulse is Valid
-		if ( pulse <= (PWM_MAX + PWM_THRESHOLD) && pulse >= (PWM_MIN - PWM_THRESHOLD) ) {
+		if ( pulse <= (PWM_MAX + PWM_THRESHOLD_PULSE) &&
+			 pulse >= (PWM_MIN - PWM_THRESHOLD_PULSE) &&
+			 period <= (PWM_PERIOD_US + PWM_THRESHOLD_PERIOD) &&
+			 period >= (PWM_PERIOD_US - PWM_THRESHOLD_PERIOD) ) {
 			// Assign Pulse to Data Array
 			rxPWM[PWM_CH3] = pulse;
 			// Trigger New Data Flag
@@ -271,19 +304,28 @@ void PWM4_IRQ (void)
 	// Init Loop Variables
 	uint32_t now = TIM_Read(TIM_RADIO);
 	uint32_t pulse = 0;
-	static uint32_t tick = 0;
+	uint32_t period = 0;
+	static uint32_t tickHigh = 0;
+	static uint32_t tickLow = 0;
 
 	if (GPIO_Read(PWM_S4_GPIO, PWM_S4_PIN))
 	{
 		// Assign Variables for Next Loop
-		tick = now;
+		tickHigh = now;
 	}
 	else
 	{
+		//
+		period = now - tickLow;
+		//
+		tickLow = now;
 		// Calculate Signal Data
-		pulse = now - tick;
+		pulse = now - tickHigh;
 		// Check Pulse is Valid
-		if ( pulse <= (PWM_MAX + PWM_THRESHOLD) && pulse >= (PWM_MIN - PWM_THRESHOLD) ) {
+		if ( pulse <= (PWM_MAX + PWM_THRESHOLD_PULSE) &&
+			 pulse >= (PWM_MIN - PWM_THRESHOLD_PULSE) &&
+			 period <= (PWM_PERIOD_US + PWM_THRESHOLD_PERIOD) &&
+			 period >= (PWM_PERIOD_US - PWM_THRESHOLD_PERIOD) ) {
 			// Assign Pulse to Data Array
 			rxPWM[PWM_CH4] = pulse;
 			// Trigger New Data Flag
