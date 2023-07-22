@@ -43,9 +43,9 @@ void 		IBUS_HandleUART	( void );
  * PRIVATE VARIABLES
  */
 
-uint8_t rxIBUS[IBUS_PAYLOAD_LEN] = {0};
-bool rxHeartbeatIBUS = false;
-IBUS_Data dataIBUS = {0};
+uint8_t 	rxIBUS[IBUS_PAYLOAD_LEN] = {0};
+bool 		rxHeartbeatIBUS = false;
+IBUS_Data	dataIBUS = {0};
 
 /*
  * PUBLIC FUNCTIONS

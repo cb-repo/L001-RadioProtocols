@@ -7,7 +7,6 @@
  */
 
 #define PPM_EOF_TIME		4000
-#define PPM_JITTER_ARRAY	3
 #define PPM_THRESHOLD		100
 #define PPM_TIMEOUT_CYCLES	3
 #define PPM_TIMEOUT			(PPM_PERIOD * PPM_TIMEOUT_CYCLES)
@@ -20,10 +19,10 @@
  * PRIVATE PROTOTYPES
  */
 
-uint32_t 	PPM_Truncate	( uint32_t );
-void 		PPM_memset 		( void );
+static uint32_t	PPM_Truncate	( uint32_t );
+static void 	PPM_resetArrays	( void );
 
-void 		PPM_IRQ 		( void );
+static void 	RADIO_S1_IRQ	( void );
 
 /*
  * PRIVATE VARIABLES
@@ -57,23 +56,23 @@ bool PPM_DetInit (void)
 
 void PPM_Init (void)
 {
-	PPM_memset();
+	PPM_resetArrays();
 	rxHeartbeatPPM = false;
 	dataPPM.inputLost = true;
 
-	TIM_Init(PPM_TIM, PPM_TIM_FREQ, PPM_TIM_RELOAD);
-	TIM_Start(PPM_TIM);
+	TIM_Init(TIM_RADIO, TIM_RADIO_FREQ, TIM_RADIO_RELOAD);
+	TIM_Start(TIM_RADIO);
 
-	GPIO_EnableInput(PPM_GPIO, PPM_PIN, GPIO_Pull_Down);
-	GPIO_OnChange(PPM_GPIO, PPM_PIN, GPIO_IT_Rising, PPM_IRQ);
+	GPIO_EnableInput(RADIO_S1_PIN, GPIO_Pull_Down);
+	GPIO_OnChange(RADIO_S1_PIN, GPIO_IT_Rising, RADIO_S1_IRQ);
 }
 
 void PPM_Deinit (void)
 {
-	TIM_Deinit(PPM_TIM);
+	TIM_Deinit(TIM_RADIO);
 
-	GPIO_OnChange(PPM_GPIO, PPM_PIN, GPIO_IT_None, NULL);
-	GPIO_Deinit(PPM_GPIO, PPM_PIN);
+	GPIO_OnChange(RADIO_S1_PIN, GPIO_IT_None, NULL);
+	GPIO_Deinit(RADIO_S1_PIN);
 }
 
 void PPM_Update (void)
@@ -105,7 +104,6 @@ void PPM_Update (void)
 			 ((dataPPM.ch[i] >= (ch_p[i] + 20)) ||
 			 (dataPPM.ch[i] <= (ch_p[i] - 20))))
 		{
- 			int32_t a = dataPPM.ch[i] - ch_p[i];
 			rxHeartbeatPPM = false;
 		}
 	}
@@ -113,7 +111,7 @@ void PPM_Update (void)
 	// Check for Input Failsafe
 	if (!dataPPM.inputLost && PPM_TIMEOUT <= (now - prev)) {
 		dataPPM.inputLost = true;
-		PPM_memset();
+		PPM_resetArrays();
 	}
 }
 
@@ -126,7 +124,7 @@ PPM_Data* PPM_GetDataPtr (void)
  * PRIVATE FUNCTIONS
  */
 
-uint32_t PPM_Truncate (uint32_t r)
+static uint32_t PPM_Truncate (uint32_t r)
 {
 	uint32_t retVal = 0;
 
@@ -147,7 +145,7 @@ uint32_t PPM_Truncate (uint32_t r)
 	return retVal;
 }
 
-void PPM_memset (void)
+static void PPM_resetArrays (void)
 {
 	for (uint8_t i = 0; i < PPM_NUM_CHANNELS; i++)
 	{
@@ -160,9 +158,9 @@ void PPM_memset (void)
  * INTERRUPT ROUTINES
  */
 
-void PPM_IRQ (void)
+static void RADIO_S1_IRQ (void)
 {
-	uint32_t now = TIM_Read(PPM_TIM);	// Current IRQ Loop Time
+	uint32_t now = TIM_Read(TIM_RADIO);	// Current IRQ Loop Time
 	uint32_t pulse = 0;					// Pulse Width
 	static uint32_t tick = 0;			// Previous IRQ Loop Time
 	static uint8_t ch = 0;				// Channel Index

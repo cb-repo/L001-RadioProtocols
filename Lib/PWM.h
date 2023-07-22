@@ -13,7 +13,15 @@
  * PUBLIC DEFINITIONS
  */
 
+#if 	defined(RADIO_S4_PIN)
 #define PWM_NUM_CHANNELS	4
+#elif	defined(RADIO_S3_PIN)
+#define PWM_NUM_CHANNELS	3
+#elif 	defined(RADIO_S2_PIN)
+#define PWM_NUM_CHANNELS	2
+#elif 	defined(RADIO_S1_PIN)
+#define PWM_NUM_CHANNELS	1
+#endif
 
 #define PWM_PERIOD_MS		20
 #define PWM_PERIOD_US		(PWM_PERIOD_MS * 1000)
