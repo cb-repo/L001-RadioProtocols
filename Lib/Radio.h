@@ -4,18 +4,15 @@
 #define RADIO_H
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-
 #include "STM32X.h"
 #include "PWM.h"
 #include "PPM.h"
 #include "SBUS.h"
 #include "IBUS.h"
 
-
 /*
  * PUBLIC DEFINITIONS
  */
-
 
 #define RADIO_MIN(X, Y) 		(((X) < (Y)) ? (X) : (Y))
 #define RADIO_MAX(X, Y) 		(((X) > (Y)) ? (X) : (Y))
@@ -33,17 +30,15 @@
 #define RADIO_CH_HALFSCALE		(RADIO_CH_MAX - RADIO_CH_CENTER)
 #define RADIO_CH_FULLSCALE		(RADIO_CH_MAX - RADIO_CH_MIN)
 
-
 /*
  * PUBLIC TYPES
  */
 
-
 typedef enum {
-	PPM,
-	SBUS,
-	IBUS,
-	PWM,
+	RADIO_PPM,
+	RADIO_SBUS,
+	RADIO_IBUS,
+	RADIO_PWM,
 } RADIO_Protocols;
 
 typedef enum {
@@ -71,18 +66,15 @@ typedef struct {
  * PUBLIC FUNCTIONS
  */
 
-
 bool		RADIO_DetInit					( RADIO_Properties * );
-void 		RADIO_Init 						( RADIO_Properties * );
+uint8_t 		RADIO_Init 						( RADIO_Properties * );
 void 		RADIO_Update 					( void );
 RADIO_Data*	RADIO_GetDataPtr				( void );
 void		RADIO_SetChannelZeroPosition	( void );
 
-
 /*
  * EXTERN DECLARATIONS
  */
-
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 #endif /* RADIO_H */

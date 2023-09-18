@@ -23,20 +23,18 @@
 static uint32_t	PWM_Truncate	( uint32_t );
 static void 	PWM_resetArrays	( void );
 
-#if defined(RADIO_S1_PIN)
-static void		RADIO_S1_IRQ 	( void );
+static void RADIO_S1_IRQ ( void );
+#if PWM_NUM_CHANNELS >= 2
+static void RADIO_S2_IRQ ( void );
 #endif
-
-#if defined(RADIO_S2_PIN)
-static void 	RADIO_S2_IRQ 	( void );
+#if PWM_NUM_CHANNELS >= 3
+static void RADIO_S3_IRQ ( void );
 #endif
-
-#if defined(RADIO_S3_PIN)
-static void 	RADIO_S3_IRQ 	( void );
+#if PWM_NUM_CHANNELS >= 4
+static void RADIO_S4_IRQ ( void );
 #endif
-
-#if defined(RADIO_S4_PIN)
-static void 	RADIO_S4_IRQ 	( void );
+#if PWM_NUM_CHANNELS > 4
+#error // Too Many Channels Defined
 #endif
 
 /*
@@ -88,29 +86,30 @@ void PWM_Init ()
 	TIM_Init(TIM_RADIO, TIM_RADIO_FREQ, TIM_RADIO_RELOAD);
 	TIM_Start(TIM_RADIO);
 
-	#if defined(RADIO_S1_PIN)
 	// Enable All Radio GPIO As Inputs
-	GPIO_EnableInput(RADIO_S1_PIN, GPIO_Pull_Down);
+	GPIO_EnableInput(RADIO_PWM1_Pin, GPIO_Pull_Down);
 	// Assign IRQ For Each Input
-	GPIO_OnChange(RADIO_S1_PIN, GPIO_IT_Both, RADIO_S1_IRQ);
+	GPIO_OnChange(RADIO_PWM1_Pin, GPIO_IT_Both, RADIO_S1_IRQ);
 	// Assume No Radio Signal On Init
+	dataPWM.inputLostCh[0] = true;
+
+#if PWM_NUM_CHANNELS >= 2
+	GPIO_EnableInput(RADIO_PWM2_Pin, GPIO_Pull_Down);
+	GPIO_OnChange(RADIO_PWM2_Pin, GPIO_IT_Both, RADIO_S2_IRQ);
 	dataPWM.inputLostCh[1] = true;
-	#endif
-	#if defined(RADIO_S2_PIN)
-	GPIO_EnableInput(RADIO_S2_PIN, GPIO_Pull_Down);
-	GPIO_OnChange(RADIO_S2_PIN, GPIO_IT_Both, RADIO_S2_IRQ);
+#endif
+
+#if PWM_NUM_CHANNELS >= 3
+	GPIO_EnableInput(RADIO_PWM3_Pin, GPIO_Pull_Down);
+	GPIO_OnChange(RADIO_PWM3_Pin, GPIO_IT_Both, RADIO_S3_IRQ);
 	dataPWM.inputLostCh[2] = true;
-	#endif
-	#if defined(RADIO_S3_PIN)
-	GPIO_EnableInput(RADIO_S3_PIN, GPIO_Pull_Down);
-	GPIO_OnChange(RADIO_S3_PIN, GPIO_IT_Both, RADIO_S3_IRQ);
+#endif
+
+#if PWM_NUM_CHANNELS >= 4
+	GPIO_EnableInput(RADIO_PWM4_Pin, GPIO_Pull_Down);
+	GPIO_OnChange(RADIO_PWM4_Pin, GPIO_IT_Both, RADIO_S4_IRQ);
 	dataPWM.inputLostCh[3] = true;
-	#endif
-	#if defined(RADIO_S4_PIN)
-	GPIO_EnableInput(RADIO_S4_PIN, GPIO_Pull_Down);
-	GPIO_OnChange(RADIO_S4_PIN, GPIO_IT_Both, RADIO_S4_IRQ);
-	dataPWM.inputLostCh[4] = true;
-	#endif
+#endif
 }
 
 void PWM_Deinit (void)
@@ -118,24 +117,25 @@ void PWM_Deinit (void)
 	// Stop and Deinitialise the Radio Timer
 	TIM_Deinit(TIM_RADIO);
 
-	#if defined(RADIO_S1_PIN)
 	// Unassign IRQ for Each Radio Input
-	GPIO_OnChange(RADIO_S1_PIN, GPIO_IT_None, NULL);
+	GPIO_OnChange(RADIO_PWM1_Pin, GPIO_IT_None, NULL);
 	// De-Initialise Radio Input GPIO
-	GPIO_Deinit(RADIO_S1_PIN);
-	#endif
-	#if defined(RADIO_S2_PIN)
-	GPIO_OnChange(RADIO_S2_PIN, GPIO_IT_None, NULL);
-	GPIO_Deinit(RADIO_S2_PIN);
-	#endif
-	#if defined(RADIO_S3_PIN)
-	GPIO_OnChange(RADIO_S3_PIN, GPIO_IT_None, NULL);
-	GPIO_Deinit(RADIO_S3_PIN);
-	#endif
-	#if defined(RADIO_S4_PIN)
-	GPIO_OnChange(RADIO_S4_PIN, GPIO_IT_None, NULL);
-	GPIO_Deinit(RADIO_S4_PIN);
-	#endif
+	GPIO_Deinit(RADIO_PWM1_Pin);
+
+#if PWM_NUM_CHANNELS >= 2
+	GPIO_OnChange(RADIO_PWM2_Pin, GPIO_IT_None, NULL);
+	GPIO_Deinit(RADIO_PWM2_Pin);
+#endif
+
+#if PWM_NUM_CHANNELS >= 3
+	GPIO_OnChange(RADIO_PWM3_Pin, GPIO_IT_None, NULL);
+	GPIO_Deinit(RADIO_PWM3_Pin);
+#endif
+
+#if PWM_NUM_CHANNELS >= 4
+	GPIO_OnChange(RADIO_PWM4_Pin, GPIO_IT_None, NULL);
+	GPIO_Deinit(RADIO_PWM4_Pin);
+#endif
 }
 
 void PWM_Update (void)
@@ -145,10 +145,9 @@ void PWM_Update (void)
 	static uint32_t tick[PWM_NUM_CHANNELS] = {0};
 
 	// Iterate through each input
-	for (uint8_t ch = 0; ch < PWM_NUM_CHANNELS; ch++)
+	for ( uint8_t ch = 0; ch < PWM_NUM_CHANNELS; ch++ )
 	{
-		if (rxHeartbeat[ch])
-		{
+		if ( rxHeartbeat[ch] ) {
 			// Assign Data to Array
 			dataPWM.ch[ch] = PWM_Truncate(rx[ch]);
 			// Reset Flags
@@ -157,7 +156,7 @@ void PWM_Update (void)
 			tick[ch] = now;
 		}
 
-		if (!dataPWM.inputLostCh[ch] && PWM_TIMEOUT <= (now - tick[ch]))
+		if ( !dataPWM.inputLostCh[ch] && PWM_TIMEOUT <= (now - tick[ch]) )
 		{
 			// Trigger InputLost Flag
 			dataPWM.inputLostCh[ch] = true;
@@ -196,7 +195,7 @@ static uint32_t PWM_Truncate (uint32_t r)
 		retVal = 0;
 	} else if (r < (PWM_MIN - PWM_THRESHOLD_PULSE)) {
 		retVal = 0;
-	} else if (r < PWM_MIN) {
+	} else if (r <= PWM_MIN) {
 		retVal = PWM_MIN;
 	} else if (r <= PWM_MAX) {
 		retVal = r;
@@ -225,7 +224,7 @@ static void PWM_resetArrays (void)
  * INTERRUPT ROUTINES
  */
 
-#if defined(RADIO_S1_PIN)
+#if defined(RADIO_PWM1_Pin)
 static void RADIO_S1_IRQ (void)
 {
 	// Init Loop Variables
@@ -235,7 +234,7 @@ static void RADIO_S1_IRQ (void)
 	static uint32_t tickHigh = 0;
 	static uint32_t tickLow = 0;
 
-	if (GPIO_Read(RADIO_S1_PIN))
+	if (GPIO_Read(RADIO_PWM1_Pin))
 	{
 		// Assign Variables for Next Loop
 		tickHigh = now;
@@ -262,7 +261,7 @@ static void RADIO_S1_IRQ (void)
 }
 #endif
 
-#if defined(RADIO_S2_PIN)
+#if defined(RADIO_PWM2_Pin)
 static void RADIO_S2_IRQ (void)
 {
 	// Init Loop Variables
@@ -272,7 +271,7 @@ static void RADIO_S2_IRQ (void)
 	static uint32_t tickHigh = 0;
 	static uint32_t tickLow = 0;
 
-	if (GPIO_Read(RADIO_S2_PIN))
+	if (GPIO_Read(RADIO_PWM2_Pin))
 	{
 		// Assign Variables for Next Loop
 		tickHigh = now;
@@ -299,7 +298,7 @@ static void RADIO_S2_IRQ (void)
 }
 #endif
 
-#if defined(RADIO_S3_PIN)
+#if defined(RADIO_PWM3_Pin)
 static void RADIO_S3_IRQ (void)
 {
 	// Init Loop Variables
@@ -309,7 +308,7 @@ static void RADIO_S3_IRQ (void)
 	static uint32_t tickHigh = 0;
 	static uint32_t tickLow = 0;
 
-	if (GPIO_Read(RADIO_S3_PIN))
+	if (GPIO_Read(RADIO_PWM3_Pin))
 	{
 		// Assign Variables for Next Loop
 		tickHigh = now;
@@ -336,7 +335,7 @@ static void RADIO_S3_IRQ (void)
 }
 #endif
 
-#if defined(RADIO_S4_PIN)
+#if defined(RADIO_PWM4_Pin)
 static void RADIO_S4_IRQ (void)
 {
 	// Init Loop Variables
@@ -346,7 +345,7 @@ static void RADIO_S4_IRQ (void)
 	static uint32_t tickHigh = 0;
 	static uint32_t tickLow = 0;
 
-	if (GPIO_Read(RADIO_S4_PIN))
+	if (GPIO_Read(RADIO_PWM4_Pin))
 	{
 		// Assign Variables for Next Loop
 		tickHigh = now;

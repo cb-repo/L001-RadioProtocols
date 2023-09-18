@@ -7,7 +7,6 @@
  * PRIVATE DEFINITIONS
  */
 
-
 #define RADIO_DETECT_TIMEOUT		1000
 #define RADIO_DETECT_PERIOD			100
 
@@ -19,20 +18,16 @@
 #define RADIO_ZEROARRAY_DELAY	100
 #define RADIO_INPUTDET_DELAY	200
 
-
 /*
  * PRIVATE TYPES
  */
 
-
-// CONTAINS POINTER TO THE DATA STRUCTURE FOR THE ACTIVE PROTOCOL
 typedef union {
 	PWM_Data* 	pwm;
 	PPM_Data* 	ppm;
 	IBUS_Data* 	ibus;
 	SBUS_Data*	sbus;
 } RADIO_ptrModuleData;
-
 
 /*
  * PRIVATE PROTOTYPES
@@ -44,7 +39,6 @@ void RADIO_ResetChannelZeroData		( void );
 void RADIO_ResetActiveChannelFlags 	( void );
 void RADIO_UpdateActiveChannelFlags ( void );
 
-
 /*
  * PRIVATE VARIABLES
  */
@@ -53,11 +47,9 @@ RADIO_Properties	radio;
 RADIO_Data 			data;
 RADIO_ptrModuleData ptrModuleData;
 
-
 /*
  * PUBLIC FUNCTIONS
  */
-
 
 /*
  * DETECTS IF A RADIO IS CURRENTLY CONNECTED AND IF IT USES A DIFFERENT PROTOCOL TO THE CURRENT CONFIG
@@ -71,7 +63,7 @@ bool RADIO_DetInit (RADIO_Properties * r)
 {
 	// INIT FUNCTION VARIABLES
 	bool retVal = false;
-	RADIO_Properties detProperties = {SBUS_BAUD, PWM};
+	RADIO_Properties detProperties = {SBUS_BAUD, RADIO_PWM};
 
 	// DEINIT ALL PROTOCOLS IRRELEVANT OF CURRENT CONFIG, JUST TO BE SAFE
 	PWM_Deinit();
@@ -83,23 +75,23 @@ bool RADIO_DetInit (RADIO_Properties * r)
 	while (1)
 	{
 		// TEST FOR PPM RADIO
-		detProperties.Protocol = PPM;
+		detProperties.Protocol = RADIO_PPM;
 		RADIO_Init(&detProperties);
 		if ( SYSTEM_DetectRadio() )
 		{
-			r->Protocol = PPM;
+			r->Protocol = RADIO_PPM;
 			retVal = true;
 			break;
 		}
 		PPM_Deinit();
 
 		// TEST FOR SBUS RADIO AT STANDARD BAUD
-		detProperties.Protocol = SBUS;
+		detProperties.Protocol = RADIO_SBUS;
 		detProperties.Baud_SBUS = SBUS_BAUD;
 		RADIO_Init(&detProperties);
 		if ( SYSTEM_DetectRadio() )
 		{
-			r->Protocol = SBUS;
+			r->Protocol = RADIO_SBUS;
 			r->Baud_SBUS = SBUS_BAUD;
 			retVal = true;
 			break;
@@ -107,12 +99,12 @@ bool RADIO_DetInit (RADIO_Properties * r)
 		SBUS_Deinit();
 
 		// TEST FOR SBUS RADIO AT FAST BAUD
-		detProperties.Protocol = SBUS;
+		detProperties.Protocol = RADIO_SBUS;
 		detProperties.Baud_SBUS = SBUS_BAUD_FAST;
 		RADIO_Init(&detProperties);
 		if ( SYSTEM_DetectRadio() )
 		{
-			r->Protocol = SBUS;
+			r->Protocol = RADIO_SBUS;
 			r->Baud_SBUS = SBUS_BAUD_FAST;
 			retVal = true;
 			break;
@@ -120,22 +112,22 @@ bool RADIO_DetInit (RADIO_Properties * r)
 		SBUS_Deinit();
 
 		// TEST FOR IBUS RADIO
-		detProperties.Protocol = IBUS;
+		detProperties.Protocol = RADIO_IBUS;
 		RADIO_Init(&detProperties);
 		if ( SYSTEM_DetectRadio() )
 		{
-			r->Protocol = IBUS;
+			r->Protocol = RADIO_IBUS;
 			retVal = true;
 			break;
 		}
 		IBUS_Deinit();
 
 		// TEST FOR PWM RADIO
-		detProperties.Protocol = PWM;
+		detProperties.Protocol = RADIO_PWM;
 		RADIO_Init(&detProperties);
 		if ( SYSTEM_DetectRadio() )
 		{
-			r->Protocol = PWM;
+			r->Protocol = RADIO_PWM;
 			retVal = true;
 			break;
 		}
@@ -222,8 +214,20 @@ bool RADIO_DetInit (RADIO_Properties * r)
  * INPUTS: 	POINTER TO RADIO_Properties STRUCT DETAILING WHAT PROTOCOL TO INITIALISE
  * RETURNS: N/A
  */
-void RADIO_Init (RADIO_Properties *r)
+uint8_t RADIO_Init ( RADIO_Properties *r )
 {
+	//
+	uint8_t retVal = 0;
+
+	//
+	if ( r->Protocol != RADIO_PWM || r->Protocol != RADIO_PPM || r->Protocol != RADIO_SBUS || r->Protocol  != RADIO_IBUS ) {
+		retVal = 1;
+		return retVal;  // TODO: Move this return to End
+	} else if ( r->Protocol == RADIO_SBUS && ( r->Baud_SBUS != SBUS_BAUD || r->Baud_SBUS != SBUS_BAUD_FAST )) {
+		retVal = 2;
+		return retVal; // TODO: Move this return to End
+	}
+
 	// RESET RADIO DATA STRUCT VARIABLES
 	data.inputLost = true;
 	RADIO_ResetChannelData();
@@ -235,36 +239,58 @@ void RADIO_Init (RADIO_Properties *r)
 	radio.Protocol = r->Protocol;
 
 	// INIT PROTOCOL SPECIFIC INFO
-	if (radio.Protocol == PPM)
+	if (radio.Protocol == RADIO_PWM)
 	{
+#if defined( USE_RADIO_PWM )
+		data.ch_num = PWM_NUM_CHANNELS;
+		PWM_Init();
+		ptrModuleData.pwm = PWM_GetDataPtr();
+#else
+		retVal = 2;
+#endif
+	}
+	else if (radio.Protocol == RADIO_PPM)
+	{
+#if defined( USE_RADIO_PPM )
 		// SAVE PROTOCOL SPECIFIC CHANNEL NUMBERS
 		data.ch_num = PPM_NUM_CHANNELS;
 		// RUN PROTOCOL SPECIFIC UPDATES
 		PPM_Init();
 		// GET POINTER TO THE PROTOCOL SPECIFIC STAT STRUCTURE
 		ptrModuleData.ppm = PPM_GetDataPtr();
+#else
+		retVal = 2;
+#endif
 	}
-	else if (radio.Protocol == SBUS)
+	else if (radio.Protocol == RADIO_SBUS)
 	{
+#if defined( USE_RADIO_SBUS )
 		data.ch_num = SBUS_NUM_CHANNELS;
 		SBUS_Init(radio.Baud_SBUS);
 		ptrModuleData.sbus = SBUS_GetDataPtr();
+#else
+		retVal = 2;
+#endif
 	}
-	else if (radio.Protocol == IBUS)
+	else if (radio.Protocol == RADIO_IBUS)
 	{
+#if defined( USE_RADIO_IBUS )
 		data.ch_num = IBUS_NUM_CHANNELS;
 		IBUS_Init();
 		ptrModuleData.ibus = IBUS_GetDataPtr();
+#else
+		retVal = 2;
+#endif
 	}
-	else // radio.Protocol == PWM
+	else
 	{
-		data.ch_num = PWM_NUM_CHANNELS;
-		PWM_Init();
-		ptrModuleData.pwm = PWM_GetDataPtr();
+		retVal = 1;
 	}
 
 	// RUN A RADIO DATA UPDATE BEFORE PROGRESSING
 	RADIO_Update();
+
+	return retVal;
 }
 
 
@@ -281,8 +307,11 @@ void RADIO_Update (void)
 	static uint32_t tick = 0;
 
 	// UPDATE AND PULL DATA FROM DEDICATED PROTOCOL MODULES TO GENERIC RADIO DATA STRUCT
-	switch (radio.Protocol) {
-	case PWM:
+	switch (radio.Protocol)
+	{
+
+#if defined( USE_RADIO_PWM )
+	case RADIO_PWM:
 		// UPDATE PROTOCOL SPECIFIC DATA
 		PWM_Update();
 		// PULL 'INPUTLOST' FLAG FROM PROTOCOL MODULE
@@ -290,23 +319,34 @@ void RADIO_Update (void)
 		// PULL CHANNEL DATA FROM PROTOCOL MODULE
 		memcpy(data.ch, ptrModuleData.pwm->ch, sizeof(ptrModuleData.pwm->ch));
 		break;
-	case PPM:
+#endif
+
+#if defined( USE_RADIO_PPM )
+	case RADIO_PPM:
 		PPM_Update();
 		data.inputLost = ptrModuleData.ppm->inputLost;
 		memcpy(data.ch, ptrModuleData.ppm->ch, sizeof(ptrModuleData.ppm->ch));
 		break;
-	case IBUS:
+#endif
+
+#if defined( USE_RADIO_IBUS )
+	case RADIO_IBUS:
 		IBUS_Update();
 		data.inputLost = ptrModuleData.ibus->inputLost;
 		memcpy(data.ch, ptrModuleData.ibus->ch, sizeof(ptrModuleData.ibus->ch));
 		break;
-	case SBUS:
+#endif
+
+#if defined( USE_RADIO_SBUS )
+	case RADIO_SBUS:
 		SBUS_Update();
 		data.inputLost = ptrModuleData.sbus->inputLost;
 		memcpy(data.ch, ptrModuleData.sbus->ch, sizeof(ptrModuleData.sbus->ch));
 		break;
+#endif
+
 	default:
-		radio.Protocol = PWM;
+		radio.Protocol = RADIO_PWM;
 		ptrModuleData.pwm = PWM_GetDataPtr();
 		break;
 	}
@@ -380,9 +420,6 @@ void RADIO_SetChannelZeroPosition (void)
  * PRIVATE FUNCTIONS
  */
 
-
-
-
 /*
  * DETECTS THE PRESENCE OF A RADIO
  *
@@ -430,7 +467,6 @@ void RADIO_ResetChannelData (void)
 	}
 }
 
-
 /*
  * RESET THE CHANNEL NEUTRAL/ZERO POSITION DATA ARRAY
  *
@@ -448,7 +484,6 @@ void RADIO_ResetChannelZeroData (void)
 	}
 }
 
-
 /*
  * RESET THE FLAGS INDICATING IF A CHANNELIS ACTVE
  *
@@ -464,7 +499,6 @@ void RADIO_ResetActiveChannelFlags (void)
 		data.chActive[ch] = chActive_False;
 	}
 }
-
 
 /*
  * UPDATES CHANNEL ACTIVE FLAGS IN RADIO DATA STRUCT BASED ON POSITION RELATIVE TO NEUTRAL/ZERO FOR EACH CHANNEL
@@ -503,10 +537,8 @@ void RADIO_UpdateActiveChannelFlags (void)
 	}
 }
 
-
 /*
  * INTERRUPT ROUTINES
  */
-
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
