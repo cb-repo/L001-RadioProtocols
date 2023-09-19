@@ -220,13 +220,13 @@ uint8_t RADIO_Init ( RADIO_Properties *r )
 	uint8_t retVal = 0;
 
 	//
-	if ( r->Protocol != RADIO_PWM || r->Protocol != RADIO_PPM || r->Protocol != RADIO_SBUS || r->Protocol  != RADIO_IBUS ) {
-		retVal = 1;
-		return retVal;  // TODO: Move this return to End
-	} else if ( r->Protocol == RADIO_SBUS && ( r->Baud_SBUS != SBUS_BAUD || r->Baud_SBUS != SBUS_BAUD_FAST )) {
-		retVal = 2;
-		return retVal; // TODO: Move this return to End
-	}
+//	if ( r->Protocol != RADIO_PWM || r->Protocol != RADIO_PPM || r->Protocol != RADIO_SBUS || r->Protocol  != RADIO_IBUS ) {
+//		retVal = 1;
+//		return retVal;  // TODO: Move this return to End
+//	} else if ( r->Protocol == RADIO_SBUS && ( r->Baud_SBUS != SBUS_BAUD || r->Baud_SBUS != SBUS_BAUD_FAST )) {
+//		retVal = 2;
+//		return retVal; // TODO: Move this return to End
+//	}
 
 	// RESET RADIO DATA STRUCT VARIABLES
 	data.inputLost = true;
@@ -413,6 +413,15 @@ void RADIO_SetChannelZeroPosition (void)
 	}
 	// RESET CHANNEL ACTIVE FLAGS - CANT BE TRUE IF JUST RESET ZERO POSITION TO CURRENT
 	RADIO_ResetActiveChannelFlags();
+}
+
+/*
+ *
+ */
+bool RADIO_inFaultState ( void )
+{
+	//
+	return data.inputLost;
 }
 
 
