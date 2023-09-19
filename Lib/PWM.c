@@ -7,8 +7,6 @@
  */
 
 #define PWM_EOF_TIME			4000
-#define PWM_THRESHOLD_PULSE		100		// [us]
-#define PWM_THRESHOLD_PERIOD	1000	// [us]
 #define PWM_TIMEOUT_CYCLES		3
 #define PWM_TIMEOUT				(PWM_PERIOD_MS * PWM_TIMEOUT_CYCLES)
 
