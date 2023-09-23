@@ -27,6 +27,7 @@
 #define RADIO_CH_CENTER			1500
 #define RADIO_CH_MAX			2000
 #define RADIO_CH_THRESHOLD		100
+#define RADIO_CH_HYST			10
 
 #define RADIO_CH_HALFSCALE		(RADIO_CH_MAX - RADIO_CH_CENTER)
 #define RADIO_CH_FULLSCALE		(RADIO_CH_MAX - RADIO_CH_MIN)
@@ -73,6 +74,7 @@ void 		RADIO_Update 					( void );
 RADIO_Data*	RADIO_GetDataPtr				( void );
 void		RADIO_SetChannelZeroPosition	( void );
 bool 		RADIO_inFaultState 				( void );
+RADIO_Data* RADIO_GetDataPtr (void);
 
 /*
  * EXTERN DECLARATIONS

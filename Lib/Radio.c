@@ -43,6 +43,7 @@ void RADIO_UpdateActiveChannelFlags ( void );
  * PRIVATE VARIABLES
  */
 
+bool initialised = false;
 RADIO_Properties	radio;
 RADIO_Data 			data;
 RADIO_ptrModuleData ptrModuleData;
@@ -220,10 +221,10 @@ uint8_t RADIO_Init ( RADIO_Properties *r )
 	uint8_t retVal = 0;
 
 	//
-//	if ( r->Protocol != RADIO_PWM || r->Protocol != RADIO_PPM || r->Protocol != RADIO_SBUS || r->Protocol  != RADIO_IBUS ) {
+//	if ( r->Protocol != RADIO_PWM || r->Protocol != RADIO_PPM || r->Protocol != RADIO_SBUS || r->Protocol != RADIO_IBUS ) {
 //		retVal = 1;
 //		return retVal;  // TODO: Move this return to End
-//	} else if ( r->Protocol == RADIO_SBUS && ( r->Baud_SBUS != SBUS_BAUD || r->Baud_SBUS != SBUS_BAUD_FAST )) {
+//	} else if ( r->Protocol == RADIO_SBUS && !( r->Baud_SBUS != SBUS_BAUD || r->Baud_SBUS != SBUS_BAUD_FAST )) {
 //		retVal = 2;
 //		return retVal; // TODO: Move this return to End
 //	}
@@ -286,6 +287,9 @@ uint8_t RADIO_Init ( RADIO_Properties *r )
 	{
 		retVal = 1;
 	}
+
+	//
+	initialised = true;
 
 	// RUN A RADIO DATA UPDATE BEFORE PROGRESSING
 	RADIO_Update();
@@ -420,8 +424,11 @@ void RADIO_SetChannelZeroPosition (void)
  */
 bool RADIO_inFaultState ( void )
 {
-	//
-	return data.inputLost;
+	if ( initialised ) {
+		return data.inputLost;
+	} else {
+		return false;
+	}
 }
 
 
