@@ -1,85 +1,78 @@
 
-/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 #ifndef RADIO_H
 #define RADIO_H
-/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
 
 #include "STM32X.h"
+
+#include "RadioCommon.h"
+
+#if defined(RADIO_USE_PWM)
 #include "PWM.h"
+#endif
+#if defined(RADIO_USE_CRSF)
+#include "CRSF.h"
+#endif
+#if defined(RADIO_USE_PPM)
 #include "PPM.h"
-#include "SBUS.h"
+#endif
+#if defined(RADIO_USE_IBUS)
 #include "IBUS.h"
+#endif
+#if defined(RADIO_USE_SBUS)
+#include "SBUS.h"
+#endif
 
-/*
- * PUBLIC DEFINITIONS
- */
 
-#define RADIO_MIN(X, Y) 		(((X) < (Y)) ? (X) : (Y))
-#define RADIO_MAX(X, Y) 		(((X) > (Y)) ? (X) : (Y))
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* PUBLIC DEFINITIONS									*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-#define RADIO_GETBIT(var, bit) 	(((var) >> (bit)) & 1)
-#define RADIO_SETBIT(var, bit) 	(var |= (1 << (bit)))
-#define RADIO_RSTBIT(var, bit)	(var &= (~(1 << (bit))))
 
-#define RADIO_NUM_CHANNELS		(RADIO_MAX( RADIO_MAX(PWM_NUM_CHANNELS, PPM_NUM_CHANNELS), RADIO_MAX(IBUS_NUM_CHANNELS, SBUS_NUM_CHANNELS) ))
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* PUBLIC TYPES      									*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-#define RADIO_CH_MIN			1000
-#define RADIO_CH_CENTER			1500
-#define RADIO_CH_MAX			2000
-#define RADIO_CH_THRESHOLD		100
-#define RADIO_CH_HYST			10
-
-#define RADIO_CH_HALFSCALE		(RADIO_CH_MAX - RADIO_CH_CENTER)
-#define RADIO_CH_FULLSCALE		(RADIO_CH_MAX - RADIO_CH_MIN)
-
-/*
- * PUBLIC TYPES
- */
-
-typedef enum {
-	RADIO_PPM,
-	RADIO_SBUS,
-	RADIO_IBUS,
-	RADIO_PWM,
-} RADIO_Protocols;
-
-typedef enum {
-	chActive_False,
-	chActive_True,
-	chActive_TrueRev,
-} RADIO_ChannelActiveFlags;
 
 typedef struct {
-	bool 						inputLost;
-	uint8_t 					ch_num;
-	uint32_t 					ch[RADIO_NUM_CHANNELS];
-	bool						chZeroSet;
-	uint32_t					chZero[RADIO_NUM_CHANNELS];
-	RADIO_ChannelActiveFlags	chActive[RADIO_NUM_CHANNELS];
-} RADIO_Data;
+	bool 			inputLost;
+	bool			allFault;
+	bool			anyFault;
+	bool 			chFault[ RADIO_CH_NUM_MAX ];
+	uint32_t 		ch[ RADIO_CH_NUM_MAX ];
+	uint8_t 		ch_num;
+	RADIO_chActive	chActive[ RADIO_CH_NUM_MAX ];
+	bool			chZeroSet;
+	uint32_t		chZero[RADIO_CH_NUM_MAX];
+} RADIO_data;
 
 typedef struct {
-	uint32_t 		Baud_SBUS;
-	RADIO_Protocols	Protocol;
-} RADIO_Properties;
+	uint32_t 		baudSBUS;
+	RADIO_protocol	protocol;
+} RADIO_config;
 
 
-/*
- * PUBLIC FUNCTIONS
- */
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* PUBLIC FUNCTIONS										*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-bool		RADIO_DetInit					( RADIO_Properties * );
-uint8_t 		RADIO_Init 						( RADIO_Properties * );
+
+uint8_t 	RADIO_Init 						( RADIO_config * );
+bool		RADIO_Detect					( RADIO_config * );
 void 		RADIO_Update 					( void );
-RADIO_Data*	RADIO_GetDataPtr				( void );
-void		RADIO_SetChannelZeroPosition	( void );
+
+RADIO_data*	RADIO_getDataPtr				( void );
+void		RADIO_setChannelZeroPosition	( void );
 bool 		RADIO_inFaultState 				( void );
-RADIO_Data* RADIO_GetDataPtr (void);
 
-/*
- * EXTERN DECLARATIONS
- */
 
-/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* EXTERN DECLARATIONS									*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 #endif /* RADIO_H */
-/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */

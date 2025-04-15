@@ -1,373 +1,444 @@
+
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 #include "PWM.h"
 
-/*
- * PRIVATE DEFINITIONS
- */
+#if defined(RADIO_USE_PWM)
 
-#define PWM_EOF_TIME			4000
-#define PWM_TIMEOUT_CYCLES		3
-#define PWM_TIMEOUT				(PWM_PERIOD_MS * PWM_TIMEOUT_CYCLES)
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* PRIVATE DEFINITIONS									*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-/*
- * PRIVATE TYPES
- */
 
-/*
- * PRIVATE PROTOTYPES
- */
+#define PWM_DETECT_MS	(PWM_TIMEIN_CYCLES * PWM_PERIOD_MAX_MS * 2)
 
-static uint32_t	PWM_Truncate	( uint32_t );
-static void 	PWM_resetArrays	( void );
 
-static void RADIO_S1_IRQ ( void );
-#if PWM_NUM_CHANNELS >= 2
-static void RADIO_S2_IRQ ( void );
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* PRIVATE TYPES										*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* PRIVATE PROTOTYPES									*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+
+static void PWM_Process ( RADIO_chIndex );
+
+static void 	PWM_CH1_IRQ 	( void );
+#if PWM_CH_NUM >= 2
+static void 	PWM_CH2_IRQ 	( void );
 #endif
-#if PWM_NUM_CHANNELS >= 3
-static void RADIO_S3_IRQ ( void );
+#if PWM_CH_NUM >= 3
+static void 	PWM_CH3_IRQ 	( void );
 #endif
-#if PWM_NUM_CHANNELS >= 4
-static void RADIO_S4_IRQ ( void );
+#if PWM_CH_NUM >= 4
+static void 	PWM_CH4_IRQ 	( void );
 #endif
-#if PWM_NUM_CHANNELS > 4
+#if PWM_CH_NUM > 4
 #error // Too Many Channels Defined
 #endif
 
+
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* PRIVATE VARIABLES									*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+
+static volatile uint32_t rx[ PWM_CH_NUM ];
+RADIO_dataModule dataPWM;
+
+
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* PUBLIC FUNCTIONS										*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+
 /*
- * PRIVATE VARIABLES
+ * INITIALISES DATASTRUCTURES, STARTS TIMERS AND HANDLES CALIBRATION FOR THE PWM RADIO MODULE
+ *
+ * INPUTS: n/a
+ * OUTPUTS: n/a
  */
-
-static volatile uint32_t	rx[PWM_NUM_CHANNELS];
-static volatile bool 		rxHeartbeat[PWM_NUM_CHANNELS];
-
-PWM_Data dataPWM;
-
-/*
- * PUBLIC FUNCTIONS
- */
-
-bool PWM_DetInit(void)
+void PWM_Init ( void )
 {
-	// Init Loop Variables
-	bool retVal = false;
-	uint32_t tick = CORE_GetTick();
+	// RESET RADIO DATA ARRAYS
+	for (uint8_t ch = 0; ch < PWM_CH_NUM; ch++) {
+		rx[ch] = 0;
+		dataPWM.ch[ch] = 0;
+		dataPWM.chActive[ch] = chOFF;
+		dataPWM.chFault[ch] = true;
+		dataPWM.allFault = true;
+		dataPWM.anyFault = true;
+	}
 
-	// Run PWM Detect
+	// START TIMER TO MEASURE PULSE WIDTHS
+	TIM_Init(  TIM_RADIO, TIM_RADIO_FREQ, TIM_RADIO_RELOAD );
+	TIM_Start( TIM_RADIO );
+
+	// SETUP GPIO AS INPUTS AND ASSIGN IRQ
+	GPIO_EnableInput(	PWM_CH1_Pin, GPIO_Pull_Down);
+	GPIO_OnChange(		PWM_CH1_Pin, GPIO_IT_Both, PWM_CH1_IRQ );
+	#if PWM_CH_NUM >= 2
+	GPIO_EnableInput(	PWM_CH2_Pin, GPIO_Pull_Down);
+	GPIO_OnChange(		PWM_CH2_Pin, GPIO_IT_Both, PWM_CH2_IRQ );
+	#endif
+	#if PWM_CH_NUM >= 3
+	GPIO_EnableInput(	PWM_CH3_Pin, GPIO_Pull_Down);
+	GPIO_OnChange(		PWM_CH3_Pin, GPIO_IT_Both, PWM_CH3_IRQ );
+	#endif
+	#if PWM_CH_NUM >= 4
+	GPIO_EnableInput(	PWM_CH4_Pin, GPIO_Pull_Down);
+	GPIO_OnChange(		PWM_CH4_Pin, GPIO_IT_Both, PWM_CH4_IRQ );
+	#endif
+
+	// RUN A PWM DATA UPDATE BEFORE PROGRESSING
+	PWM_Update();
+}
+
+
+/*
+ * DEINITIALISE IRQ'S AND STOPS TIMERS RELATED TO FUNCTION OF THE PWM RADIO MODULE
+ *
+ * INPUTS: n/a
+ * OUTPUTS: n/a
+ */
+void PWM_Deinit ( void )
+{
+	// STOP AND DEINITIALISE THE RADIO TIMER
+	TIM_Deinit(TIM_RADIO);
+
+	// DEINITIALISE AND UNASIGN IRQ FOR EACH RADIO INPUT PIN
+	GPIO_OnChange(	PWM_CH1_Pin, GPIO_IT_None, NULL );
+	GPIO_Deinit(	PWM_CH1_Pin );
+	#if PWM_CH_NUM >= 2
+	GPIO_OnChange(	PWM_CH2_Pin, GPIO_IT_None, NULL );
+	GPIO_Deinit(	PWM_CH2_Pin );
+	#endif
+	#if PWM_CH_NUM >= 3
+	GPIO_OnChange(	PWM_CH3_Pin, GPIO_IT_None, NULL );
+	GPIO_Deinit(	PWM_CH3_Pin );
+	#endif
+	#if PWM_CH_NUM >= 4
+	GPIO_OnChange(	PWM_CH4_Pin, GPIO_IT_None, NULL );
+	GPIO_Deinit(	PWM_CH4_Pin );
+	#endif
+}
+
+
+/*
+ * HANDLES DETECTION OF VALID PWM SIGNALS
+ *
+ * THIS MODULE WILL INITIALISE WHAT IT NEEDS TO FOR CORRECT FUNCTIONALITY
+ * IF DETECTION IS UNSICCESSFUL IT WILL DEINITIALISE ITSELF
+ * IF DETECTIONS IS SUCCESSFUL IT WILL REMAIN ENABLED
+ *
+ * INPUTS: n/a
+ * OUTPUTS: true = protocol detected, false = protocol not detected
+ */
+bool PWM_Detect ( void )
+{
+	// INITIALSIE FUNCTION VARIABLES
+	uint32_t tick = CORE_GetTick();
+	bool retVal = false;
+
+	// RUN PWM PROTOCOL DETECTION
 	PWM_Init();
-	while ((PWM_TIMEOUT * 2) > CORE_GetTick() - tick) {
+	while ( PWM_DETECT_MS > (CORE_GetTick() - tick) )
+	{
+		PWM_Update();
+		if ( !dataPWM.allFault ) {
+			retVal = true;
+			break;
+		}
 		CORE_Idle();
 	}
 
-	// Consolidate Heartbeats to Single retVal
-	for (uint8_t ch = 0; ch < PWM_NUM_CHANNELS; ch++) {
-		retVal |= rxHeartbeat[ch];
-	}
-
-	if ( !retVal )
-	{
+	// DEINITIALISE IF NO RADIO DETECTED
+	if ( !retVal ) 	{
 		PWM_Deinit();
 	}
 
+	//
 	return retVal;
 }
 
-void PWM_Init ()
+
+/*
+ * HANDLES EVERYTHING WITH ONGOING OPERATION OF PWM RADIO FUNCTIONALITY
+ *
+ * SHOULD BE CALLED EVERY LOOP (EVERY ~1ms)
+ *
+ * INPUTS: n/a
+ * OUTPUTS: n/a
+ */
+void PWM_Update ( void )
 {
-	// Zero Channel Data Array
-	PWM_resetArrays();
-	// Assume No Radio Signal on Init
-	dataPWM.inputLost = true;
+	// INITIALISE FUCNTION VARIABLES
+	static uint32_t tick[ PWM_CH_NUM ] = { 0 };
+	static uint8_t 	validData[ PWM_CH_NUM ] = { 0 };
 
-	// Start Timer to Measure Pulse Widths
-	TIM_Init(TIM_RADIO, TIM_RADIO_FREQ, TIM_RADIO_RELOAD);
-	TIM_Start(TIM_RADIO);
-
-	// Enable All Radio GPIO As Inputs
-	GPIO_EnableInput(RADIO_PWM1_Pin, GPIO_Pull_Down);
-	// Assign IRQ For Each Input
-	GPIO_OnChange(RADIO_PWM1_Pin, GPIO_IT_Both, RADIO_S1_IRQ);
-	// Assume No Radio Signal On Init
-	dataPWM.inputLostCh[0] = true;
-
-#if PWM_NUM_CHANNELS >= 2
-	GPIO_EnableInput(RADIO_PWM2_Pin, GPIO_Pull_Down);
-	GPIO_OnChange(RADIO_PWM2_Pin, GPIO_IT_Both, RADIO_S2_IRQ);
-	dataPWM.inputLostCh[1] = true;
-#endif
-
-#if PWM_NUM_CHANNELS >= 3
-	GPIO_EnableInput(RADIO_PWM3_Pin, GPIO_Pull_Down);
-	GPIO_OnChange(RADIO_PWM3_Pin, GPIO_IT_Both, RADIO_S3_IRQ);
-	dataPWM.inputLostCh[2] = true;
-#endif
-
-#if PWM_NUM_CHANNELS >= 4
-	GPIO_EnableInput(RADIO_PWM4_Pin, GPIO_Pull_Down);
-	GPIO_OnChange(RADIO_PWM4_Pin, GPIO_IT_Both, RADIO_S4_IRQ);
-	dataPWM.inputLostCh[3] = true;
-#endif
-}
-
-void PWM_Deinit (void)
-{
-	// Stop and Deinitialise the Radio Timer
-	TIM_Deinit(TIM_RADIO);
-
-	// Unassign IRQ for Each Radio Input
-	GPIO_OnChange(RADIO_PWM1_Pin, GPIO_IT_None, NULL);
-	// De-Initialise Radio Input GPIO
-	GPIO_Deinit(RADIO_PWM1_Pin);
-
-#if PWM_NUM_CHANNELS >= 2
-	GPIO_OnChange(RADIO_PWM2_Pin, GPIO_IT_None, NULL);
-	GPIO_Deinit(RADIO_PWM2_Pin);
-#endif
-
-#if PWM_NUM_CHANNELS >= 3
-	GPIO_OnChange(RADIO_PWM3_Pin, GPIO_IT_None, NULL);
-	GPIO_Deinit(RADIO_PWM3_Pin);
-#endif
-
-#if PWM_NUM_CHANNELS >= 4
-	GPIO_OnChange(RADIO_PWM4_Pin, GPIO_IT_None, NULL);
-	GPIO_Deinit(RADIO_PWM4_Pin);
-#endif
-}
-
-void PWM_Update (void)
-{
-	// Init Loop Variables
 	uint32_t now = CORE_GetTick();
-	static uint32_t tick[PWM_NUM_CHANNELS] = {0};
 
-	// Iterate through each input
-	for ( uint8_t ch = 0; ch < PWM_NUM_CHANNELS; ch++ )
+	// ITTERATE THROUGH EACH CHANNEL
+	for ( uint8_t ch = CH1; ch < PWM_CH_NUM; ch++ )
 	{
-		if ( rxHeartbeat[ch] ) {
-			// Assign Data to Array
-			dataPWM.ch[ch] = PWM_Truncate(rx[ch]);
-			// Reset Flags
-			rxHeartbeat[ch] = false;
-			dataPWM.inputLostCh[ch] = false;
-			tick[ch] = now;
+		// STATE - TIMEDOUT (OR STARTUP)
+		if ( dataPWM.chFault[ch] )
+		{
+			// CHECK FOR DATA IN THE RECIEVE BUFFER
+			if ( rx[ch] )
+			{
+				// INCREMENT VALID DATA COUNTER
+				validData[ch] += 1;
+				// HAVE WE REACHED TIME IN CONDITION
+				if ( validData[ch] >= PWM_TIMEIN_CYCLES ) {
+					// RESET FAULT FLAG AND PROCEED TO NORMAL OPERATION - DONT RESET RX ARRAY
+					dataPWM.chFault[ch] = false;
+				} else {
+					// RESET DATA FOR NEXT LOOP
+					rx[ch] = 0;
+					tick[ch] = now;
+				}
+			}
+			// CHECK FOR TIMEIN COUNT RESET
+			else if ( validData[ch] && ((now - tick[ch]) >= PWM_PERIOD_MAX_MS) )
+			{
+				validData[ch] = 0;
+				tick[ch] = now;
+			}
 		}
 
-		if ( !dataPWM.inputLostCh[ch] && PWM_TIMEOUT <= (now - tick[ch]) )
+		// STATE - NORMAL OPERATION
+		if ( !dataPWM.chFault[ch] )
 		{
-			// Trigger InputLost Flag
-			dataPWM.inputLostCh[ch] = true;
-			//Reset Channel Data
-			dataPWM.ch[ch] = 0;
+			// CHECK FOR NEW DATA
+			if ( rx[ch] )
+			{
+				// PROCESS DATA
+				PWM_Process(ch);
+				// RESET RELEVANT FLAGS
+				tick[ch] = now;
+			}
+
+			// CHECK FOR TIMEOUT CONDITION
+			else if ((now - tick[ch]) >= PWM_TIMEOUT_MS)
+			{
+				// SET RELEVANT FLAGS
+				dataPWM.chFault[ch] = true;
+				dataPWM.ch[ch] = 0;
+				dataPWM.chActive[ch] = chOFF;
+				tick[ch] = now;
+				validData[ch] = 0;
+			}
 		}
 	}
 
 	//
-	for (uint8_t ch = 0; ch < PWM_NUM_CHANNELS; ch++)
-	{
-		if (dataPWM.inputLostCh[ch]) {
-			dataPWM.inputLost = true;
-			break;
-		}
-		if (ch == (PWM_NUM_CHANNELS - 1)) {
-			dataPWM.inputLost = false;
-		}
-	}
+	#if PWM_CH_NUM >= 4
+	dataPWM.allFault = dataPWM.chFault[CH1] && dataPWM.chFault[CH2] && dataPWM.chFault[CH3] && dataPWM.chFault[CH4];
+	dataPWM.anyFault = dataPWM.chFault[CH1] || dataPWM.chFault[CH2] || dataPWM.chFault[CH3] || dataPWM.chFault[CH4];
+	#elif PWM_CH_NUM >= 3
+	dataPWM.allFault = dataPWM.chFault[CH1] && dataPWM.chFault[CH2] && dataPWM.chFault[CH3];
+	dataPWM.anyFault = dataPWM.chFault[CH1] || dataPWM.chFault[CH2] || dataPWM.chFault[CH3];
+	#elif PWM_CH_NUM >= 2
+	dataPWM.allFault = dataPWM.chFault[CH1] && dataPWM.chFault[CH2];
+	dataPWM.anyFault = dataPWM.chFault[CH1] || dataPWM.chFault[CH2];
+	#else
+	dataPWM.allFault = dataPWM.chFault[CH1];
+	dataPWM.anyFault = dataPWM.chFault[CH1];
+	#endif
+
 }
 
-PWM_Data* PWM_GetDataPtr (void)
+
+/*
+ * RETRIEVED A POINTER TO THE DATA STRUCTURE CONTAINING ALL PWM MODULE DATA
+ *
+ * INPUTS: n/a
+ * OUTPUTS: Pointer of type RADIO_data
+ */
+RADIO_dataModule* PWM_getDataPtr ( void )
 {
 	return &dataPWM;
 }
 
-/*
- * PRIVATE FUNCTIONS
- */
 
-static uint32_t PWM_Truncate (uint32_t r)
-{
-	uint32_t retVal = 0;
-
-	if (r == 0) {
-		retVal = 0;
-	} else if (r < (PWM_MIN - PWM_THRESHOLD_PULSE)) {
-		retVal = 0;
-	} else if (r <= PWM_MIN) {
-		retVal = PWM_MIN;
-	} else if (r <= PWM_MAX) {
-		retVal = r;
-	} else if (r < (PWM_MAX + PWM_THRESHOLD_PULSE))	{
-		retVal = PWM_MAX;
-	} else {
-		retVal = 0;
-	}
-
-	return retVal;
-}
-
-static void PWM_resetArrays (void)
-{
-	for (uint8_t ch = 0; ch < PWM_NUM_CHANNELS; ch++)
-	{
-		rx[ch] = 0;
-		rxHeartbeat[ch] = false;
-		dataPWM.inputLostCh[ch] = true;
-	}
-}
-
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* PRIVATE FUNCTIONS									*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 
 /*
- * INTERRUPT ROUTINES
+ * EXTRACTS RADIO DATA FROM TEMP ARRAY, PROCESSES IT AND MOVES IT TO THE OUTBOUND DATA ARRAY
+ *
+ * INPUTS: channel index to process of type RADIO_chIndex
+ * OUTPUTS: n/a
  */
-
-#if defined(RADIO_PWM1_Pin)
-static void RADIO_S1_IRQ (void)
+static void PWM_Process ( RADIO_chIndex c )
 {
-	// Init Loop Variables
-	uint32_t now = TIM_Read(TIM_RADIO);
-	uint32_t pulse = 0;
-	uint32_t period = 0;
-	static uint32_t tickHigh = 0;
-	static uint32_t tickLow = 0;
+	// EXTRACT DATA AND RESET TEMP ARRAY
+	uint32_t r = rx[c];
+	rx[c] = 0;
 
-	if (GPIO_Read(RADIO_PWM1_Pin))
-	{
-		// Assign Variables for Next Loop
-		tickHigh = now;
+	// TRUNCATE RADIO DATA AND MOVE TO OUTBOUND ARRAY
+	// WE ALREADY KNOW DATA IS GREATER THAN RADIO_CH_ABSMIN AND SMALLER THAN RADIO_CH_ABSMAX
+	if ( r < RADIO_CH_MIN ) {
+		dataPWM.ch[c] = RADIO_CH_MIN;
 	}
-	else
+	else if ( r > RADIO_CH_MAX ) {
+		dataPWM.ch[c] = RADIO_CH_MIN;
+	}
+	else {
+		dataPWM.ch[c] = r;
+	}
+
+	// UPDATE CHANNEL'S ACTIVE FLAG
+	if ( r > RADIO_CH_CENTERMAX ) {
+		dataPWM.chActive[c] = chFWD;
+	}
+	else if ( r < RADIO_CH_CENTERMIN ) {
+		dataPWM.chActive[c] = chRVS;
+	}
+	else {
+		dataPWM.chActive[c] = chOFF;
+	}
+}
+
+
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* EVENT HANDLERS   									*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* INTERRUPT ROUTINES									*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+
+static void PWM_CH1_IRQ ( void )
+{
+	// INITIALISE LOOP VARIABLES
+	uint32_t 		now 		= TIM_Read(TIM_RADIO);
+	bool 			pos 		= GPIO_Read(PWM_CH1_Pin);
+	static bool 	pos_p 		= false;
+	static uint32_t	tickHigh 	= 0;
+	static uint32_t tickLow 	= 0;
+
+	// IGNORE NOISE ON SIGNAL I/P THAT RETURNS FASTER THAN INTERRRUPT SERVICE
+	if ( pos_p != pos )
 	{
-		//
-		period = now - tickLow;
-		//
-		tickLow = now;
-		// Calculate Signal Data
-		pulse = now - tickHigh;
-		// Check Pulse is Valid
-		if ( pulse <= (PWM_MAX + PWM_THRESHOLD_PULSE) &&
-			 pulse >= (PWM_MIN - PWM_THRESHOLD_PULSE) &&
-			 period <= (PWM_PERIOD_US + PWM_THRESHOLD_PERIOD) &&
-			 period >= (PWM_PERIOD_US - PWM_THRESHOLD_PERIOD) ) {
-			// Assign Pulse to Data Array
-			rx[PWM_CH1] = pulse;
-			// Trigger New Data Flag
-			rxHeartbeat[PWM_CH1] = true;
+		// RISING EDGE PULSE DETECTED
+		if ( pos ) {
+			// ASSIGN VARIABLES TO USE ON PULSE LOW
+			tickHigh = now;
+		}
+		// FALLING EDGE PULSE DETECTED
+		else {
+			// CALCULATE SIGNAL PERIOD AND PULSE WIDTH
+			uint32_t period = now - tickLow;
+			uint32_t pulse = now - tickHigh;
+			// CHECK SIGNAL IS VALID
+			if ( pulse <= RADIO_CH_ABSMAX 		&& pulse >= RADIO_CH_ABSMIN &&
+				 period <= PWM_PERIOD_MAX_US	&& period >= PWM_PERIOD_MIN_US )
+			{
+				// ASSIGN PULSE TO TEMP DATA ARRAY
+				rx[CH1] = pulse;
+			}
+			// UPDATE VARIABLES FOR NEXT LOOP
+			tickLow = now;
 		}
 	}
+
+	//
+	pos_p = pos;
+}
+
+
+#if PWM_CH_NUM >= 2
+static void PWM_CH2_IRQ ( void )
+{
+	uint32_t 		now 		= TIM_Read(TIM_RADIO);
+	bool 			pos 		= GPIO_Read(PWM_CH2_Pin);
+	static bool 	pos_p 		= false;
+	static uint32_t	tickHigh 	= 0;
+	static uint32_t tickLow 	= 0;
+
+	if ( pos_p != pos ) {
+		if ( pos ) {
+			tickHigh = now;
+		} else {
+			uint32_t period = now - tickLow;
+			uint32_t pulse = now - tickHigh;
+			if ( pulse <= RADIO_CH_ABSMAX 		&& pulse >= RADIO_CH_ABSMIN &&
+				 period <= PWM_PERIOD_MAX_US	&& period >= PWM_PERIOD_MIN_US )
+			{
+				rx[CH2] = pulse;
+			}
+			tickLow = now;
+		}
+	}
+	pos_p = pos;
 }
 #endif
 
-#if defined(RADIO_PWM2_Pin)
-static void RADIO_S2_IRQ (void)
-{
-	// Init Loop Variables
-	uint32_t now = TIM_Read(TIM_RADIO);
-	uint32_t pulse = 0;
-	uint32_t period = 0;
-	static uint32_t tickHigh = 0;
-	static uint32_t tickLow = 0;
 
-	if (GPIO_Read(RADIO_PWM2_Pin))
-	{
-		// Assign Variables for Next Loop
-		tickHigh = now;
-	}
-	else
-	{
-		//
-		period = now - tickLow;
-		//
-		tickLow = now;
-		// Calculate Signal Data
-		pulse = now - tickHigh;
-		// Check Pulse is Valid
-		if ( pulse <= (PWM_MAX + PWM_THRESHOLD_PULSE) &&
-			 pulse >= (PWM_MIN - PWM_THRESHOLD_PULSE) &&
-			 period <= (PWM_PERIOD_US + PWM_THRESHOLD_PERIOD) &&
-			 period >= (PWM_PERIOD_US - PWM_THRESHOLD_PERIOD) ) {
-			// Assign Pulse to Data Array
-			rx[PWM_CH2] = pulse;
-			// Trigger New Data Flag
-			rxHeartbeat[PWM_CH2] = true;
+#if PWM_CH_NUM >= 3
+static void PWM_CH3_IRQ ( void )
+{
+	uint32_t 		now 		= TIM_Read(TIM_RADIO);
+	bool 			pos 		= GPIO_Read(PWM_CH3_Pin);
+	static bool 	pos_p 		= false;
+	static uint32_t	tickHigh 	= 0;
+	static uint32_t tickLow 	= 0;
+
+	if ( pos_p != pos ) {
+		if ( pos ) {
+			tickHigh = now;
+		} else {
+			uint32_t period = now - tickLow;
+			uint32_t pulse = now - tickHigh;
+			if ( pulse <= RADIO_CH_ABSMAX 		&& pulse >= RADIO_CH_ABSMIN &&
+				 period <= PWM_PERIOD_MAX_US	&& period >= PWM_PERIOD_MIN_US )
+			{
+				rx[CH3] = pulse;
+			}
+			tickLow = now;
 		}
 	}
+	pos_p = pos;
 }
 #endif
 
-#if defined(RADIO_PWM3_Pin)
-static void RADIO_S3_IRQ (void)
-{
-	// Init Loop Variables
-	uint32_t now = TIM_Read(TIM_RADIO);
-	uint32_t pulse = 0;
-	uint32_t period = 0;
-	static uint32_t tickHigh = 0;
-	static uint32_t tickLow = 0;
 
-	if (GPIO_Read(RADIO_PWM3_Pin))
-	{
-		// Assign Variables for Next Loop
-		tickHigh = now;
-	}
-	else
-	{
-		//
-		period = now - tickLow;
-		//
-		tickLow = now;
-		// Calculate Signal Data
-		pulse = now - tickHigh;
-		// Check Pulse is Valid
-		if ( pulse <= (PWM_MAX + PWM_THRESHOLD_PULSE) &&
-			 pulse >= (PWM_MIN - PWM_THRESHOLD_PULSE) &&
-			 period <= (PWM_PERIOD_US + PWM_THRESHOLD_PERIOD) &&
-			 period >= (PWM_PERIOD_US - PWM_THRESHOLD_PERIOD) ) {
-			// Assign Pulse to Data Array
-			rx[PWM_CH3] = pulse;
-			// Trigger New Data Flag
-			rxHeartbeat[PWM_CH3] = true;
+#if PWM_CH_NUM >= 4
+static void PWM_CH4_IRQ ( void )
+{
+	uint32_t 		now 		= TIM_Read(TIM_RADIO);
+	bool 			pos 		= GPIO_Read(PWM_CH4_Pin);
+	static bool 	pos_p 		= false;
+	static uint32_t	tickHigh 	= 0;
+	static uint32_t tickLow 	= 0;
+
+	if ( pos_p != pos ) {
+		if ( pos ) {
+			tickHigh = now;
+		} else {
+			uint32_t period = now - tickLow;
+			uint32_t pulse = now - tickHigh;
+			if ( pulse <= RADIO_CH_ABSMAX 		&& pulse >= RADIO_CH_ABSMIN &&
+				 period <= PWM_PERIOD_MAX_US	&& period >= PWM_PERIOD_MIN_US )
+			{
+				rx[CH4] = pulse;
+			}
+			tickLow = now;
 		}
 	}
+	pos_p = pos;
 }
 #endif
 
-#if defined(RADIO_PWM4_Pin)
-static void RADIO_S4_IRQ (void)
-{
-	// Init Loop Variables
-	uint32_t now = TIM_Read(TIM_RADIO);
-	uint32_t pulse = 0;
-	uint32_t period = 0;
-	static uint32_t tickHigh = 0;
-	static uint32_t tickLow = 0;
 
-	if (GPIO_Read(RADIO_PWM4_Pin))
-	{
-		// Assign Variables for Next Loop
-		tickHigh = now;
-	}
-	else
-	{
-		//
-		period = now - tickLow;
-		//
-		tickLow = now;
-		// Calculate Signal Data
-		pulse = now - tickHigh;
-		// Check Pulse is Valid
-		if ( pulse <= (PWM_MAX + PWM_THRESHOLD_PULSE) &&
-			 pulse >= (PWM_MIN - PWM_THRESHOLD_PULSE) &&
-			 period <= (PWM_PERIOD_US + PWM_THRESHOLD_PERIOD) &&
-			 period >= (PWM_PERIOD_US - PWM_THRESHOLD_PERIOD) ) {
-			// Assign Pulse to Data Array
-			rx[PWM_CH4] = pulse;
-			// Trigger New Data Flag
-			rxHeartbeat[PWM_CH4] = true;
-		}
-	}
-}
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 #endif
-
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */

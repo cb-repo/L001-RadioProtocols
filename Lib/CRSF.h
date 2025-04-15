@@ -1,8 +1,8 @@
 
-/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
-#ifndef PPM_H
-#define PPM_H
-/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+#ifndef CRSF_H
+#define CRSF_H
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 
 #include "STM32X.h"
@@ -10,7 +10,6 @@
 #include "Core.h"
 #include "GPIO.h"
 #include "TIM.h"
-#include "US.h"
 
 #include "RadioCommon.h"
 
@@ -20,43 +19,29 @@
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 
-#define PPM_CH_NUM			8
-
-#define PPM_PERIOD			20
-#define PPM_MIN				1000
-#define PPM_CENTER			1500
-#define PPM_MAX				2000
+#define CRSF_CH_NUM	16
 
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PUBLIC TYPES      									*/
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-
-typedef struct {
-	bool inputLost;
-	uint32_t ch[PPM_CH_NUM];
-} PPM_Data;
-
-
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PUBLIC FUNCTIONS										*/
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 
-void 		PPM_Init 		( void );
-void 		PPM_Deinit 		( void );
-bool 		PPM_Detect 		( void );
-void 		PPM_Update 		( void );
-
-PPM_Data*	PPM_getDataPtr	( void );
+void CRSF_Init 				( void );
+void CRSF_Deinit 			( void );
+void CRSF_Detect 			( void );
+void CRSF_Update 			( void );
+RADIO_data* CRSF_getDataPtr	( void );
 
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* EXTERN DECLARATIONS									*/
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
-#endif /* PPM_H */
+#endif /* CRSF_H */
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */

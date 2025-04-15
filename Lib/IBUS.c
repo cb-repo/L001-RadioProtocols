@@ -2,9 +2,12 @@
 
 #include "IBUS.h"
 
-/*
- * PRIVATE DEFINITIONS
- */
+#if defined(RADIO_USE_IBUS)
+
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* PRIVATE DEFINITIONS									*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
 
 #define IBUS_HEADER1_LEN	1
 #define IBUS_HEADER2_LEN	1
@@ -27,31 +30,72 @@
 #define IBUS_TIMEOUT_FS		(IBUS_PERIOD * IBUS_DROPPED_FRAMES) // Failsafe timeout. How long radio lost before failsafe is activated
 #define IBUS_TIMEOUT_IP		4 // Input timeout. How long after detecting message headers does remaining read timeout.
 
-/*
- * PRIVATE TYPES
- */
 
-/*
- * PRIVATE PROTOTYPES
- */
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* PRIVATE TYPES										*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* PRIVATE PROTOTYPES									*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
 
 uint32_t	IBUS_Truncate	( uint32_t );
 bool 		IBUS_Checksum	( void );
 void 		IBUS_HandleUART	( void );
 
-/*
- * PRIVATE VARIABLES
- */
+
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* PRIVATE VARIABLES									*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
 
 uint8_t 	rxIBUS[IBUS_PAYLOAD_LEN] = {0};
 bool 		rxHeartbeatIBUS = false;
 IBUS_Data	dataIBUS = {0};
 
-/*
- * PUBLIC FUNCTIONS
- */
 
-bool IBUS_DetInit(void)
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* PUBLIC FUNCTIONS										*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+
+/*
+ * TEXT
+ *
+ * INPUTS:
+ * OUTPUTS:
+ */
+void IBUS_Init ( void )
+{
+	memset(rxIBUS, 0, sizeof(rxIBUS));
+	rxHeartbeatIBUS = false;
+	dataIBUS.inputLost = true;
+
+	UART_Init(IBUS_UART, IBUS_BAUD, UART_Mode_Default);
+}
+
+
+/*
+ * TEXT
+ *
+ * INPUTS:
+ * OUTPUTS:
+ */
+void IBUS_Deinit ( void )
+{
+	UART_Deinit(IBUS_UART);
+}
+
+
+/*
+ * TEXT
+ *
+ * INPUTS:
+ * OUTPUTS:
+ */
+bool IBUS_Detect ( void )
 {
 	IBUS_Init();
 
@@ -70,21 +114,14 @@ bool IBUS_DetInit(void)
 	return !dataIBUS.inputLost;
 }
 
-void IBUS_Init (void)
-{
-	memset(rxIBUS, 0, sizeof(rxIBUS));
-	rxHeartbeatIBUS = false;
-	dataIBUS.inputLost = true;
 
-	UART_Init(IBUS_UART, IBUS_BAUD, UART_Mode_Default);
-}
-
-void IBUS_Deinit (void)
-{
-	UART_Deinit(IBUS_UART);
-}
-
-void IBUS_Update (void)
+/*
+ * TEXT
+ *
+ * INPUTS:
+ * OUTPUTS:
+ */
+void IBUS_Update ( void )
 {
 	// Update Rx Data
 	IBUS_HandleUART();
@@ -117,16 +154,31 @@ void IBUS_Update (void)
 	}
 }
 
-IBUS_Data* IBUS_GetDataPtr (void)
+
+/*
+ * TEXT
+ *
+ * INPUTS:
+ * OUTPUTS:
+ */
+IBUS_Data* IBUS_getDataPtr ( void )
 {
 	return &dataIBUS;
 }
 
-/*
- * PRIVATE FUNCTIONS
- */
 
-uint32_t IBUS_Truncate (uint32_t r)
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* PRIVATE FUNCTIONS									*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+
+/*
+ * TEXT
+ *
+ * INPUTS:
+ * OUTPUTS:
+ */
+uint32_t IBUS_Truncate ( uint32_t r )
 {
 	uint32_t retVal = 0;
 
@@ -147,6 +199,13 @@ uint32_t IBUS_Truncate (uint32_t r)
 	return retVal;
 }
 
+
+/*
+ * TEXT
+ *
+ * INPUTS:
+ * OUTPUTS:
+ */
 bool IBUS_Checksum ( void )
 {
 	bool retVal = false;
@@ -168,7 +227,14 @@ bool IBUS_Checksum ( void )
 	return retVal;
 }
 
-void IBUS_HandleUART (void)
+
+/*
+ * TEXT
+ *
+ * INPUTS:
+ * OUTPUTS:
+ */
+void IBUS_HandleUART ( void )
 {
 	// Init Loop Variables
 	uint32_t now = CORE_GetTick();
@@ -246,9 +312,17 @@ void IBUS_HandleUART (void)
 	}
 }
 
-/*
- * INTERRUPT ROUTINES
- */
+
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* EVENT HANDLERS										*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 
-/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* INTERRUPT ROUTINES									*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+#endif
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */

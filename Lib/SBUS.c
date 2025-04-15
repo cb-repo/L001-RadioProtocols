@@ -2,9 +2,12 @@
 
 #include "SBUS.h"
 
-/*
- * PRIVATE DEFINITIONS
- */
+#if defined(RADIO_USE_SBUS)
+
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* PRIVATE DEFINITIONS									*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
 
 #define EMPTY				0
 
@@ -31,30 +34,71 @@
 #define SBUS_TIMEOUT_FS		(SBUS_PERIOD * SBUS_DROPPED_FRAMES)
 #define SBUS_TIMEOUT_IP		4
 
-/*
- * PRIVATE TYPES
- */
 
-/*
- * PRIVATE PROTOTYPES
- */
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* PRIVATE TYPES										*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-uint16_t 	SBUS_Transform 	( uint16_t );
-void 		SBUS_HandleUART ( void );
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* PRIVATE PROTOTYPES									*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-/*
- * PRIVATE VARIABLES
- */
+
+uint16_t	SBUS_Transform 	( uint16_t );
+void 		SBUS_HandleUART	( void );
+
+
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* PRIVATE VARIABLES									*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
 
 uint8_t rxSBUS[2*SBUS_PAYLOAD_LEN] = {0};
 bool rxHeartbeatSBUS = false;
 SBUS_Data dataSBUS = {0};
 
-/*
- * PUBLIC FUNCTIONS
- */
 
-bool SBUS_DetInit(uint32_t baud)
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* PUBLIC FUNCTIONS										*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+
+/*
+ * TEXT
+ *
+ * INPUTS:
+ * OUTPUTS:
+ */
+void SBUS_Init ( uint32_t baud )
+{
+	memset(rxSBUS, 0, sizeof(rxSBUS));
+	rxHeartbeatSBUS = false;
+	dataSBUS.inputLost = true;
+
+	UART_Init(SBUS_UART, baud, UART_Mode_Inverted);
+	UART_ReadFlush(SBUS_UART);
+}
+
+
+/*
+ * TEXT
+ *
+ * INPUTS:
+ * OUTPUTS:
+ */
+void SBUS_Deinit ( void )
+{
+	UART_Deinit(SBUS_UART);
+}
+
+
+/*
+ * TEXT
+ *
+ * INPUTS:
+ * OUTPUTS:
+ */
+bool SBUS_Detect ( uint32_t baud )
 {
 	SBUS_Init(baud);
 
@@ -73,22 +117,14 @@ bool SBUS_DetInit(uint32_t baud)
 	return !dataSBUS.inputLost;
 }
 
-void SBUS_Init (uint32_t baud)
-{
-	memset(rxSBUS, 0, sizeof(rxSBUS));
-	rxHeartbeatSBUS = false;
-	dataSBUS.inputLost = true;
 
-	UART_Init(SBUS_UART, baud, UART_Mode_Inverted);
-	UART_ReadFlush(SBUS_UART);
-}
-
-void SBUS_Deinit (void)
-{
-	UART_Deinit(SBUS_UART);
-}
-
-void SBUS_Update (void)
+/*
+ * TEXT
+ *
+ * INPUTS:
+ * OUTPUTS:
+ */
+void SBUS_Update ( void )
 {
 	// Update Rx Data
 	SBUS_HandleUART();
@@ -101,7 +137,7 @@ void SBUS_Update (void)
 	if (rxHeartbeatSBUS)
 	{
 		// Decode SBUS Data
-		dataSBUS.ch[0]  = SBUS_Transform( (int16_t)( (rxSBUS[1]	   | rxSBUS[2] << 8 ) 					 & 0x07FF) );
+		dataSBUS.ch[0]  = SBUS_Transform( (int16_t)( (rxSBUS[1]	   	  | rxSBUS[2] << 8 ) 					 & 0x07FF) );
 		dataSBUS.ch[1]  = SBUS_Transform( (int16_t)( (rxSBUS[2]  >> 3 | rxSBUS[3] << 5 ) 					 & 0x07FF) );
 		dataSBUS.ch[2]  = SBUS_Transform( (int16_t)( (rxSBUS[3]  >> 6 | rxSBUS[4] << 2  | rxSBUS[5] << 10 ) & 0x07FF) );
 		dataSBUS.ch[3]  = SBUS_Transform( (int16_t)( (rxSBUS[5]  >> 1 | rxSBUS[6] << 7 ) 					 & 0x07FF) );
@@ -142,16 +178,31 @@ void SBUS_Update (void)
 	}
 }
 
-SBUS_Data* SBUS_GetDataPtr (void)
+
+/*
+ * TEXT
+ *
+ * INPUTS:
+ * OUTPUTS:
+ */
+SBUS_Data* SBUS_getDataPtr ( void )
 {
 	return &dataSBUS;
 }
 
-/*
- * PRIVATE FUNCTIONS
- */
 
-uint16_t SBUS_Transform (uint16_t r)
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* PRIVATE FUNCTIONS									*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+
+/*
+ * TEXT
+ *
+ * INPUTS:
+ * OUTPUTS:
+ */
+uint16_t SBUS_Transform ( uint16_t r )
 {
 	uint32_t retVal = 0;
 
@@ -181,7 +232,13 @@ uint16_t SBUS_Transform (uint16_t r)
 }
 
 
-void SBUS_HandleUART (void)
+/*
+ * TEXT
+ *
+ * INPUTS:
+ * OUTPUTS:
+ */
+void SBUS_HandleUART ( void )
 {
 	uint32_t now = CORE_GetTick();
 	static uint32_t timeout = 0;
@@ -229,9 +286,17 @@ void SBUS_HandleUART (void)
 	}
 }
 
-/*
- * INTERRUPT ROUTINES
- */
+
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* EVENT HANDLERS										*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* INTERRUPT ROUTINES									*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+#endif
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */

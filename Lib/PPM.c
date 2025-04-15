@@ -1,42 +1,94 @@
-/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 #include "PPM.h"
 
-/*
- * PRIVATE DEFINITIONS
- */
+#if defined(RADIO_USE_PPM)
+
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* PRIVATE DEFINITIONS									*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
 
 #define PPM_EOF_TIME		4000
 #define PPM_THRESHOLD		100
 #define PPM_TIMEOUT_CYCLES	3
 #define PPM_TIMEOUT			(PPM_PERIOD * PPM_TIMEOUT_CYCLES)
 
-/*
- * PRIVATE TYPES
- */
 
-/*
- * PRIVATE PROTOTYPES
- */
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* PRIVATE TYPES										*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* PRIVATE PROTOTYPES									*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
 
 static uint32_t	PPM_Truncate	( uint32_t );
 static void 	PPM_resetArrays	( void );
 
-static void 	RADIO_S1_IRQ	( void );
+static void 	PPM_CH_IRQ	( void );
 
-/*
- * PRIVATE VARIABLES
- */
 
-volatile uint16_t rxPPM[PPM_NUM_CHANNELS] = {0};
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* PRIVATE VARIABLES									*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+
+volatile uint16_t rxPPM[PPM_CH_NUM] = {0};
 volatile bool rxHeartbeatPPM = false;
 PPM_Data dataPPM = {0};
 
-/*
- * PUBLIC FUNCTIONS
- */
 
-bool PPM_DetInit (void)
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* PUBLIC FUNCTIONS										*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+
+/*
+ * TEXT
+ *
+ * INPUTS:
+ * OUTPUTS:
+ */
+void PPM_Init ( void )
+{
+	PPM_resetArrays();
+	rxHeartbeatPPM = false;
+	dataPPM.inputLost = true;
+
+	TIM_Init(TIM_RADIO, TIM_RADIO_FREQ, TIM_RADIO_RELOAD);
+	TIM_Start(TIM_RADIO);
+
+	GPIO_EnableInput(PPM_CH_Pin, GPIO_Pull_Down);
+	GPIO_OnChange(PPM_CH_Pin, GPIO_IT_Rising, PPM_CH_IRQ);
+}
+
+
+/*
+ * TEXT
+ *
+ * INPUTS:
+ * OUTPUTS:
+ */
+void PPM_Deinit ( void )
+{
+	TIM_Deinit(TIM_RADIO);
+
+	GPIO_OnChange(PPM_CH_Pin, GPIO_IT_None, NULL);
+	GPIO_Deinit(PPM_CH_Pin);
+}
+
+
+/*
+ * TEXT
+ *
+ * INPUTS:
+ * OUTPUTS:
+ */
+bool PPM_DetInit ( void )
 {
 	PPM_Init();
 
@@ -54,38 +106,24 @@ bool PPM_DetInit (void)
 	return rxHeartbeatPPM;
 }
 
-void PPM_Init (void)
-{
-	PPM_resetArrays();
-	rxHeartbeatPPM = false;
-	dataPPM.inputLost = true;
 
-	TIM_Init(TIM_RADIO, TIM_RADIO_FREQ, TIM_RADIO_RELOAD);
-	TIM_Start(TIM_RADIO);
-
-	GPIO_EnableInput(RADIO_S1_PIN, GPIO_Pull_Down);
-	GPIO_OnChange(RADIO_S1_PIN, GPIO_IT_Rising, RADIO_S1_IRQ);
-}
-
-void PPM_Deinit (void)
-{
-	TIM_Deinit(TIM_RADIO);
-
-	GPIO_OnChange(RADIO_S1_PIN, GPIO_IT_None, NULL);
-	GPIO_Deinit(RADIO_S1_PIN);
-}
-
-void PPM_Update (void)
+/*
+ * TEXT
+ *
+ * INPUTS:
+ * OUTPUTS:
+ */
+void PPM_Update ( void )
 {
 	// Init Loop Variables
 	uint32_t now = CORE_GetTick();
 	static uint32_t prev = 0;
-	static uint32_t ch_p[PPM_NUM_CHANNELS];
+	static uint32_t ch_p[PPM_CH_NUM];
 	// Check for New Input Data
 	if (rxHeartbeatPPM)
 	{
 		// Assign Input to data Struct
-		for (uint8_t i = 0; i < PPM_NUM_CHANNELS; i++)
+		for (uint8_t i = 0; i < PPM_CH_NUM; i++)
 		{
 			ch_p[i] = dataPPM.ch[i];
 			dataPPM.ch[i] = PPM_Truncate(rxPPM[i]);
@@ -98,7 +136,7 @@ void PPM_Update (void)
 	}
 
 	// Assign Input to data Struct
-	for (uint8_t i = 0; i < PPM_NUM_CHANNELS; i++)
+	for (uint8_t i = 0; i < PPM_CH_NUM; i++)
 	{
 		if ( dataPPM.ch[i] != 0 &&
 			 ((dataPPM.ch[i] >= (ch_p[i] + 20)) ||
@@ -115,16 +153,31 @@ void PPM_Update (void)
 	}
 }
 
-PPM_Data* PPM_GetDataPtr (void)
+
+/*
+ * TEXT
+ *
+ * INPUTS:
+ * OUTPUTS:
+ */
+PPM_Data* PPM_GetDataPtr ( void )
 {
 	return &dataPPM;
 }
 
-/*
- * PRIVATE FUNCTIONS
- */
 
-static uint32_t PPM_Truncate (uint32_t r)
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* PRIVATE FUNCTIONS									*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+
+/*
+ * TEXT
+ *
+ * INPUTS:
+ * OUTPUTS:
+ */
+static uint32_t PPM_Truncate ( uint32_t r )
 {
 	uint32_t retVal = 0;
 
@@ -145,20 +198,39 @@ static uint32_t PPM_Truncate (uint32_t r)
 	return retVal;
 }
 
-static void PPM_resetArrays (void)
+
+/*
+ * TEXT
+ *
+ * INPUTS:
+ * OUTPUTS:
+ */
+static void PPM_resetArrays ( void )
 {
-	for (uint8_t i = 0; i < PPM_NUM_CHANNELS; i++)
+	for (uint8_t i = 0; i < PPM_CH_NUM; i++)
 	{
 		rxPPM[i] = 0;
 	}
 }
 
 
-/*
- * INTERRUPT ROUTINES
- */
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* EVENT HANDLERS										*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-static void RADIO_S1_IRQ (void)
+
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* INTERRUPT ROUTINES									*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+
+/*
+ * TEXT
+ *
+ * INPUTS:
+ * OUTPUTS:
+ */
+static void PPM_CH_IRQ ( void )
 {
 	uint32_t now = TIM_Read(TIM_RADIO);	// Current IRQ Loop Time
 	uint32_t pulse = 0;					// Pulse Width
@@ -186,7 +258,7 @@ static void RADIO_S1_IRQ (void)
 			sync = false;
 		}
 		// If on Last Channel
-		if (ch >= PPM_NUM_CHANNELS)
+		if (ch >= PPM_CH_NUM)
 		{
 			rxHeartbeatPPM = true;
 			sync = false;
@@ -200,4 +272,6 @@ static void RADIO_S1_IRQ (void)
 }
 
 
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+#endif
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */

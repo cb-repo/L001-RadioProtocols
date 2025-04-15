@@ -1,68 +1,75 @@
+
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 #ifndef PWM_H
 #define PWM_H
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
+
 #include "STM32X.h"
+
 #include "Core.h"
 #include "GPIO.h"
 #include "TIM.h"
-#include "US.h"
 
-/*
- * PUBLIC DEFINITIONS
- */
+#include "RadioCommon.h"
 
-#if 	defined(RADIO_S4_PIN)
-#define PWM_NUM_CHANNELS	4
-#elif	defined(RADIO_S3_PIN)
-#define PWM_NUM_CHANNELS	3
-#elif 	defined(RADIO_S2_PIN)
-#define PWM_NUM_CHANNELS	2
-#elif 	defined(RADIO_S1_PIN)
-#define PWM_NUM_CHANNELS	1
+
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* PUBLIC DEFINITIONS									*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+
+#if defined(PWM_CH_NUM)
+#if PWM_CH_NUM > 4
+#error "PWM_CH_NUM cannot be greater than 4"
+#endif
+#elif defined(PWM_CH1_Pin) && defined(PWM_CH2_Pin) && defined(PWM_CH3_Pin) && defined(PWM_CH4_Pin)
+#define PWM_CH_NUM	4
+#elif defined(PWM_CH1_Pin) && defined(PWM_CH2_Pin) && defined(PWM_CH3_Pin)
+#define PWM_CH_NUM	3
+#elif defined(PWM_CH1_Pin) && defined(PWM_CH2_Pin)
+#define PWM_CH_NUM	2
+#elif defined(PWM_CH1_Pin)
+#define PWM_CH_NUM	1
+#else
+#error "error defining PWM_CH_NUM"
 #endif
 
 #define PWM_PERIOD_MS		20
+#define PWM_PERIOD_MAX_MS	25
+#define PWM_PERIOD_MAX_US 	(PWM_PERIOD_MAX_MS*1000)
+#define PWM_PERIOD_MIN_MS 	10
+#define PWM_PERIOD_MIN_US 	(PWM_PERIOD_MIN_MS*1000)
 #define PWM_PERIOD_US		(PWM_PERIOD_MS * 1000)
-#define PWM_MIN				1000
-#define PWM_CENTER			1500
-#define PWM_MAX				2000
+
+#define PWM_TIMEOUT_CYCLES	5
+#define PWM_TIMEOUT_MS		(PWM_PERIOD_MAX_MS * PWM_TIMEOUT_CYCLES)
+
+#define PWM_TIMEIN_CYCLES	3
 
 
-#define PWM_THRESHOLD_PULSE		100		// [us]
-#define PWM_THRESHOLD_PERIOD	1000	// [us]
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* PUBLIC TYPES      									*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-#define PWM_CH1				0
-#define PWM_CH2				1
-#define PWM_CH3				2
-#define PWM_CH4				3
-
-/*
- * PUBLIC TYPES
- */
-
-typedef struct {
-	bool inputLost;
-	bool inputLostCh[PWM_NUM_CHANNELS];
-	uint32_t ch[PWM_NUM_CHANNELS];
-} PWM_Data;
-
-/*
- * PUBLIC FUNCTIONS
- */
-
-bool PWM_DetInit(void);
-void PWM_Init (void);
-void PWM_Deinit (void);
-void PWM_Update (void);
-PWM_Data* PWM_GetDataPtr (void);
-
-/*
- * EXTERN DECLARATIONS
- */
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* PUBLIC FUNCTIONS										*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 
-/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+void 				PWM_Init 		( void );
+void 				PWM_Deinit 		( void );
+bool 				PWM_Detect		( void );
+void 				PWM_Update 		( void );
+
+RADIO_dataModule*	PWM_getDataPtr 	( void );
+
+
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* EXTERN DECLARATIONS									*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 #endif /* PWM_H */
-/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */

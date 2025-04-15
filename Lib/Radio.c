@@ -3,56 +3,124 @@
 
 #include "Radio.h"
 
-/*
- * PRIVATE DEFINITIONS
- */
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* PRIVATE DEFINITIONS									*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
 
 #define RADIO_DETECT_TIMEOUT		1000
 #define RADIO_DETECT_PERIOD			100
 
 #define RADIO_DELAY_MEASURENEUTRAL	100
 
-#define RADIO_ZERO_THRESHOLD	100
-#define RADIO_INPUT_THRESHOLD	200
+#define RADIO_ZERO_THRESHOLD		100
+#define RADIO_INPUT_THRESHOLD		200
 
-#define RADIO_ZEROARRAY_DELAY	100
-#define RADIO_INPUTDET_DELAY	200
+#define RADIO_ZEROARRAY_DELAY		100
+#define RADIO_INPUTDET_DELAY		200
+
+
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* PRIVATE TYPES										*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* PRIVATE PROTOTYPES									*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+
+bool Radio_detectRadio 				( void );
+void RADIO_resetChannelData			( void );
+void RADIO_resetChannelZeroData		( void );
+void RADIO_resetActiveChannelFlags 	( void );
+void RADIO_updateActiveChannelFlags ( void );
+
+
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* PRIVATE VARIABLES									*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+
+bool 			init = false;
+RADIO_config	config;
+RADIO_data 		data;
+
+
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* PUBLIC FUNCTIONS										*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
 
 /*
- * PRIVATE TYPES
+ * HANDLES ALL INITIALISATIONS OF DATA STRUCTURES, TIMERS, CALIBRATION, ETC FOR CHOSEN PROTOCOL
+ *
+ * INPUTS: 	POINTER TO RADIO_Properties STRUCT DETAILING WHAT PROTOCOL TO INITIALISE
+ * RETURNS: N/A
  */
+uint8_t RADIO_Init ( RADIO_config *r )
+{
+	// RESET RADIO DATA ARRAY
+	data.inputLost = true;
+	RADIO_resetChannelData();
+	RADIO_resetChannelZeroData();
+	RADIO_resetActiveChannelFlags();
 
-typedef union {
-	PWM_Data* 	pwm;
-	PPM_Data* 	ppm;
-	IBUS_Data* 	ibus;
-	SBUS_Data*	sbus;
-} RADIO_ptrModuleData;
+	// SAVE INIT PROPERTIES TO THE RADIO PROPERTIES STRUCT
+	config.baudSBUS = r->baudSBUS;
+	config.protocol = r->protocol;
+
+	// INIT PROTOCOL SPECIFIC INFO
+	if (config.protocol == PWM) {
+		data.ch_num = PWM_CH_NUM;
+		PWM_Init();
+		ptrModuleData.pwm = PWM_GetDataPtr();
+	}
+
+#if defined( RADIO_USE_CRSF )
+	else if (config.protocol == CRSF) {
+			data.ch_num = CRSF_CH_NUM;
+			CRSF_Init();
+			ptrModuleData.sbus = CRSF_GetDataPtr();
+	}
+#endif
+
+#if defined( RADIO_USE_PPM )
+	else if (config.protocol == PPM) {
+		data.ch_num = PWM_CH_NUM;
+		PPM_Init();
+		ptrModuleData.ppm = PPM_GetDataPtr();
+	}
+#endif
+
+#if defined( RADIO_USE_SBUS )
+	else if (config.protocol == SBUS) {
+		data.ch_num = PWM_CH_NUM;
+		SBUS_Init(radio.Baud_SBUS);
+		ptrModuleData.sbus = SBUS_GetDataPtr();
+	}
+#endif
+
+#if defined( RADIO_USE_IBUS )
+	else if (config.protocol == IBUS) {
+		data.ch_num = PWM_CH_NUM;
+		IBUS_Init();
+		ptrModuleData.ibus = IBUS_GetDataPtr();
+	}
+#endif
+
+	//
+	init = true;
+
+	// RUN A RADIO DATA UPDATE BEFORE PROGRESSING
+	RADIO_Update();
+
+	return retVal;
+}
+
 
 /*
- * PRIVATE PROTOTYPES
- */
-
-bool SYSTEM_DetectRadio 			( void );
-void RADIO_ResetChannelData			( void );
-void RADIO_ResetChannelZeroData		( void );
-void RADIO_ResetActiveChannelFlags 	( void );
-void RADIO_UpdateActiveChannelFlags ( void );
-
-/*
- * PRIVATE VARIABLES
- */
-
-bool initialised = false;
-RADIO_Properties	radio;
-RADIO_Data 			data;
-RADIO_ptrModuleData ptrModuleData;
-
-/*
- * PUBLIC FUNCTIONS
- */
-
-/*
+ *
  * DETECTS IF A RADIO IS CURRENTLY CONNECTED AND IF IT USES A DIFFERENT PROTOCOL TO THE CURRENT CONFIG
  *
  * INPUTS: 	POINTER TO RADIO_Properties STRUCT CONTAING CURRENT PROTOCOL CONFIG
@@ -60,7 +128,7 @@ RADIO_ptrModuleData ptrModuleData;
  * 					  NOTE: RADIO_Properties STRUCT WILL BE UPDATED WITH NEW RADIO CONFIG
  * 			FALSE	- NO RADIO IS DETECTED OR ITS THE SAME AS CURRENT CONFIG
  */
-bool RADIO_DetInit (RADIO_Properties * r)
+bool RADIO_Detect ( RADIO_config * r )
 {
 	// INIT FUNCTION VARIABLES
 	bool retVal = false;
@@ -78,7 +146,7 @@ bool RADIO_DetInit (RADIO_Properties * r)
 		// TEST FOR PPM RADIO
 		detProperties.Protocol = RADIO_PPM;
 		RADIO_Init(&detProperties);
-		if ( SYSTEM_DetectRadio() )
+		if ( Radio_DetectRadio() )
 		{
 			r->Protocol = RADIO_PPM;
 			retVal = true;
@@ -90,7 +158,7 @@ bool RADIO_DetInit (RADIO_Properties * r)
 		detProperties.Protocol = RADIO_SBUS;
 		detProperties.Baud_SBUS = SBUS_BAUD;
 		RADIO_Init(&detProperties);
-		if ( SYSTEM_DetectRadio() )
+		if ( Radio_DetectRadio() )
 		{
 			r->Protocol = RADIO_SBUS;
 			r->Baud_SBUS = SBUS_BAUD;
@@ -103,7 +171,7 @@ bool RADIO_DetInit (RADIO_Properties * r)
 		detProperties.Protocol = RADIO_SBUS;
 		detProperties.Baud_SBUS = SBUS_BAUD_FAST;
 		RADIO_Init(&detProperties);
-		if ( SYSTEM_DetectRadio() )
+		if ( Radio_DetectRadio() )
 		{
 			r->Protocol = RADIO_SBUS;
 			r->Baud_SBUS = SBUS_BAUD_FAST;
@@ -115,7 +183,7 @@ bool RADIO_DetInit (RADIO_Properties * r)
 		// TEST FOR IBUS RADIO
 		detProperties.Protocol = RADIO_IBUS;
 		RADIO_Init(&detProperties);
-		if ( SYSTEM_DetectRadio() )
+		if ( Radio_DetectRadio() )
 		{
 			r->Protocol = RADIO_IBUS;
 			retVal = true;
@@ -126,7 +194,7 @@ bool RADIO_DetInit (RADIO_Properties * r)
 		// TEST FOR PWM RADIO
 		detProperties.Protocol = RADIO_PWM;
 		RADIO_Init(&detProperties);
-		if ( SYSTEM_DetectRadio() )
+		if ( Radio_DetectRadio() )
 		{
 			r->Protocol = RADIO_PWM;
 			retVal = true;
@@ -139,157 +207,6 @@ bool RADIO_DetInit (RADIO_Properties * r)
 		retVal = false;
 		break;
 	}
-
-//	// RESET
-//	data.inputLost = true;
-//
-//	// SEQUENTIALLY RUN DETECTION ALGO FOR EACH PROTOCOL
-//	if (PPM_DetInit())
-//	{
-//		// IS THE PROCOTOL DIFFERENT TO THE CURRENT CONFIG
-//		if (r->Protocol != PPM)
-//		{
-//			// UPDATE STRUCT WITH NEW PROTOCOL
-//			r->Protocol = PPM;
-//			// SAVE PROTOCOL SPECIFIC CHANNEL NUMBERS
-//			data.ch_num = PPM_NUM_CHANNELS;
-//			// GET POINTER TO THE PROTOCOL SPECIFIC STAT STRUCTURE
-//			ptrModuleData.ppm = PPM_GetDataPtr();
-//			// SET PROTOCOL DETECTED FLAG
-//			retVal = true;
-//		}
-//	}
-//	else if (SBUS_DetInit(SBUS_BAUD))
-//	{
-//		if (r->Protocol != SBUS || r->Baud_SBUS != SBUS_BAUD)
-//		{
-//			r->Protocol = SBUS;
-//			r->Baud_SBUS = SBUS_BAUD;
-//			data.ch_num = SBUS_NUM_CHANNELS;
-//			ptrModuleData.sbus = SBUS_GetDataPtr();
-//			retVal = true;
-//		}
-//	}
-//	else if (SBUS_DetInit(SBUS_BAUD_FAST))
-//	{
-//		if (r->Protocol != SBUS || r->Baud_SBUS != SBUS_BAUD_FAST)
-//		{
-//			r->Protocol = SBUS;
-//			r->Baud_SBUS = SBUS_BAUD;
-//			data.ch_num = SBUS_NUM_CHANNELS;
-//			ptrModuleData.sbus = SBUS_GetDataPtr();
-//			retVal = true;
-//		}
-//	}
-//	else if (IBUS_DetInit())
-//	{
-//		if (r->Protocol != IBUS)
-//		{
-//			r->Protocol = IBUS;
-//			data.ch_num = IBUS_NUM_CHANNELS;
-//			ptrModuleData.ibus = IBUS_GetDataPtr();
-//			retVal = true;
-//		}
-//	}
-//	else if (PWM_DetInit())
-//	{
-//		if (r->Protocol != PWM)
-//		{
-//			r->Protocol = PWM;
-//			data.ch_num = PWM_NUM_CHANNELS;
-//			ptrModuleData.pwm = PWM_GetDataPtr();
-//			retVal = true;
-//		}
-//	}
-
-	// RUN A RADIO DATA UPDATE BEFORE PROGRESSING
-	RADIO_Update();
-
-	return retVal;
-}
-
-
-/*
- * HANDLES ALL INITIALISATIONS OF DATA STRUCTURES, TIMERS, CALIBRATION, ETC FOR CHOSEN PROTOCOL
- *
- * INPUTS: 	POINTER TO RADIO_Properties STRUCT DETAILING WHAT PROTOCOL TO INITIALISE
- * RETURNS: N/A
- */
-uint8_t RADIO_Init ( RADIO_Properties *r )
-{
-	//
-	uint8_t retVal = 0;
-
-	//
-//	if ( r->Protocol != RADIO_PWM || r->Protocol != RADIO_PPM || r->Protocol != RADIO_SBUS || r->Protocol != RADIO_IBUS ) {
-//		retVal = 1;
-//		return retVal;  // TODO: Move this return to End
-//	} else if ( r->Protocol == RADIO_SBUS && !( r->Baud_SBUS != SBUS_BAUD || r->Baud_SBUS != SBUS_BAUD_FAST )) {
-//		retVal = 2;
-//		return retVal; // TODO: Move this return to End
-//	}
-
-	// RESET RADIO DATA STRUCT VARIABLES
-	data.inputLost = true;
-	RADIO_ResetChannelData();
-	RADIO_ResetChannelZeroData();
-	RADIO_ResetActiveChannelFlags();
-
-	// SAVE INIT PROPERTIES TO THE RADIO PROPERTIES STRUCT
-	radio.Baud_SBUS = r->Baud_SBUS;
-	radio.Protocol = r->Protocol;
-
-	// INIT PROTOCOL SPECIFIC INFO
-	if (radio.Protocol == RADIO_PWM)
-	{
-#if defined( USE_RADIO_PWM )
-		data.ch_num = PWM_NUM_CHANNELS;
-		PWM_Init();
-		ptrModuleData.pwm = PWM_GetDataPtr();
-#else
-		retVal = 2;
-#endif
-	}
-	else if (radio.Protocol == RADIO_PPM)
-	{
-#if defined( USE_RADIO_PPM )
-		// SAVE PROTOCOL SPECIFIC CHANNEL NUMBERS
-		data.ch_num = PPM_NUM_CHANNELS;
-		// RUN PROTOCOL SPECIFIC UPDATES
-		PPM_Init();
-		// GET POINTER TO THE PROTOCOL SPECIFIC STAT STRUCTURE
-		ptrModuleData.ppm = PPM_GetDataPtr();
-#else
-		retVal = 2;
-#endif
-	}
-	else if (radio.Protocol == RADIO_SBUS)
-	{
-#if defined( USE_RADIO_SBUS )
-		data.ch_num = SBUS_NUM_CHANNELS;
-		SBUS_Init(radio.Baud_SBUS);
-		ptrModuleData.sbus = SBUS_GetDataPtr();
-#else
-		retVal = 2;
-#endif
-	}
-	else if (radio.Protocol == RADIO_IBUS)
-	{
-#if defined( USE_RADIO_IBUS )
-		data.ch_num = IBUS_NUM_CHANNELS;
-		IBUS_Init();
-		ptrModuleData.ibus = IBUS_GetDataPtr();
-#else
-		retVal = 2;
-#endif
-	}
-	else
-	{
-		retVal = 1;
-	}
-
-	//
-	initialised = true;
 
 	// RUN A RADIO DATA UPDATE BEFORE PROGRESSING
 	RADIO_Update();
@@ -311,11 +228,11 @@ void RADIO_Update (void)
 	static uint32_t tick = 0;
 
 	// UPDATE AND PULL DATA FROM DEDICATED PROTOCOL MODULES TO GENERIC RADIO DATA STRUCT
-	switch (radio.Protocol)
+	switch (config.protocol)
 	{
 
-#if defined( USE_RADIO_PWM )
-	case RADIO_PWM:
+#if defined( RADIO_USE_PWM )
+	case PWM:
 		// UPDATE PROTOCOL SPECIFIC DATA
 		PWM_Update();
 		// PULL 'INPUTLOST' FLAG FROM PROTOCOL MODULE
@@ -325,24 +242,32 @@ void RADIO_Update (void)
 		break;
 #endif
 
-#if defined( USE_RADIO_PPM )
-	case RADIO_PPM:
+#if defined( RADIO_USE_CRSF )
+	case CRSF:
+		CRSF_Update();
+		data.inputLost = ptrModuleData.crsf->inputLost;
+		memcpy(data.ch, ptrModuleData.crsf->ch, sizeof(ptrModuleData.crsf->ch));
+		break;
+#endif
+
+#if defined( RADIO_USE_PPM )
+	case PPM:
 		PPM_Update();
 		data.inputLost = ptrModuleData.ppm->inputLost;
 		memcpy(data.ch, ptrModuleData.ppm->ch, sizeof(ptrModuleData.ppm->ch));
 		break;
 #endif
 
-#if defined( USE_RADIO_IBUS )
-	case RADIO_IBUS:
+#if defined( RADIO_USE_IBUS )
+	case IBUS:
 		IBUS_Update();
 		data.inputLost = ptrModuleData.ibus->inputLost;
 		memcpy(data.ch, ptrModuleData.ibus->ch, sizeof(ptrModuleData.ibus->ch));
 		break;
 #endif
 
-#if defined( USE_RADIO_SBUS )
-	case RADIO_SBUS:
+#if defined( RADIO_USE_SBUS )
+	case SBUS:
 		SBUS_Update();
 		data.inputLost = ptrModuleData.sbus->inputLost;
 		memcpy(data.ch, ptrModuleData.sbus->ch, sizeof(ptrModuleData.sbus->ch));
@@ -350,8 +275,8 @@ void RADIO_Update (void)
 #endif
 
 	default:
-		radio.Protocol = RADIO_PWM;
-		ptrModuleData.pwm = PWM_GetDataPtr();
+		config.protocol = PWM;
+		ptrModuleData.pwm = PWM_getDataPtr();
 		break;
 	}
 
@@ -367,7 +292,7 @@ void RADIO_Update (void)
 		else if ( RADIO_ZEROARRAY_DELAY < (CORE_GetTick() - tick) )
 		{
 			// SET THE CHANNEL ZERO POSITIONS, THIS WILL ALSO RESET CHANNEL ACTIVE FLAGS
-			RADIO_SetChannelZeroPosition();
+			RADIO_setChannelZeroPosition();
 			// SET FLAG SO DOESNT EVALUATE AGAIN
 			data.chZeroSet = true;
 		}
@@ -376,7 +301,7 @@ void RADIO_Update (void)
 	// UPDATE CHANNEL ACTIVE FLAGS IF CHANNEL ZERO/NEUTRAL POSITIONS HAVE BEEN RECORDED
 	if ( data.chZeroSet && !data.inputLost )
 	{
-		RADIO_UpdateActiveChannelFlags();
+		RADIO_updateActiveChannelFlags();
 	}
 }
 
@@ -388,7 +313,7 @@ void RADIO_Update (void)
  * INPUTS: 	N/A
  * RETURNS: POINTER TO THE RADIO DATA STRUCTURE
  */
-RADIO_Data* RADIO_GetDataPtr (void)
+RADIO_data* RADIO_getDataPtr (void)
 {
 	return &data;
 }
@@ -403,7 +328,7 @@ RADIO_Data* RADIO_GetDataPtr (void)
  * INPUTS: 	N/A
  * RETURNS: N/A
  */
-void RADIO_SetChannelZeroPosition (void)
+void RADIO_setChannelZeroPosition (void)
 {
 	// ONLY ASSIGN IF RADIO CONNECTED
 	if (!data.inputLost)
@@ -416,25 +341,27 @@ void RADIO_SetChannelZeroPosition (void)
 		}
 	}
 	// RESET CHANNEL ACTIVE FLAGS - CANT BE TRUE IF JUST RESET ZERO POSITION TO CURRENT
-	RADIO_ResetActiveChannelFlags();
+	RADIO_resetActiveChannelFlags();
 }
+
 
 /*
  *
  */
 bool RADIO_inFaultState ( void )
 {
-	if ( initialised ) {
+	if ( init ) {
 		return data.inputLost;
 	} else {
-		return false;
+		return true;
 	}
 }
 
 
-/*
- * PRIVATE FUNCTIONS
- */
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* PRIVATE FUNCTIONS									*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
 
 /*
  * DETECTS THE PRESENCE OF A RADIO
@@ -443,7 +370,7 @@ bool RADIO_inFaultState ( void )
  * RETURNS: TRUE 	- IF RADIO IS CONNECTED AND VALID DATA IS REVIECED
  * 			FALSE 	- NO RADIO OR VALID DATA RECIEVED
  */
-bool SYSTEM_DetectRadio (void)
+bool RADIO_detectRadio (void)
 {
 	// INIT FUNCTION VARIABLES
 	uint32_t tick = CORE_GetTick();
@@ -467,21 +394,23 @@ bool SYSTEM_DetectRadio (void)
 	return retVal;
 }
 
+
 /*
  * RESET THE CHANNEL DATA ARRAY
  *
  * INPUTS: 	N/A
  * RETURNS: N/A
  */
-void RADIO_ResetChannelData (void)
+void RADIO_resetChannelData (void)
 {
 	// ITTERATE THROUGH ENTIRE CHANNEL ARRAY
-	for (uint8_t ch = 0; ch < RADIO_NUM_CHANNELS; ch++)
+	for (uint8_t ch = 0; ch < RADIO_CH_NUM_MAX; ch++)
 	{
 		// RESET CHANNEL DATA
 		data.ch[ch] = 0;
 	}
 }
+
 
 /*
  * RESET THE CHANNEL NEUTRAL/ZERO POSITION DATA ARRAY
@@ -489,16 +418,17 @@ void RADIO_ResetChannelData (void)
  * INPUTS: 	N/A
  * RETURNS: N/A
  */
-void RADIO_ResetChannelZeroData (void)
+void RADIO_resetChannelZeroData (void)
 {
 	data.chZeroSet = false;
 	// ITTERATE THROUGH ENTIRE CHANNEL ARRAY
-	for (uint8_t ch = 0; ch < RADIO_NUM_CHANNELS; ch++)
+	for (uint8_t ch = 0; ch < RADIO_CH_NUM_MAX; ch++)
 	{
 		// RESET CHANNEL ZERO ARRAY
 		data.chZero[ch] = 0;
 	}
 }
+
 
 /*
  * RESET THE FLAGS INDICATING IF A CHANNELIS ACTVE
@@ -506,15 +436,16 @@ void RADIO_ResetChannelZeroData (void)
  * INPUTS: 	N/A
  * RETURNS: N/A
  */
-void RADIO_ResetActiveChannelFlags (void)
+void RADIO_resetActiveChannelFlags (void)
 {
 	// ITTERATE THROUGH ENTIRE CHANNEL ARRAY
-	for (uint8_t ch = 0; ch < RADIO_NUM_CHANNELS; ch++)
+	for (uint8_t ch = 0; ch < RADIO_CH_NUM_MAX; ch++)
 	{
 		// RESET CHANNEL ACTIVE FLAG ARRAY
-		data.chActive[ch] = chActive_False;
+		data.chActive[ch] = chOFF;
 	}
 }
+
 
 /*
  * UPDATES CHANNEL ACTIVE FLAGS IN RADIO DATA STRUCT BASED ON POSITION RELATIVE TO NEUTRAL/ZERO FOR EACH CHANNEL
@@ -522,7 +453,7 @@ void RADIO_ResetActiveChannelFlags (void)
  * INPUTS: 	N/A
  * RETURNS: N/A
  */
-void RADIO_UpdateActiveChannelFlags (void)
+void RADIO_updateActiveChannelFlags (void)
 {
 	// ITTERATE THROUGH EACH CHANNEL
 	for (uint8_t ch = 0; ch < data.ch_num; ch++)
@@ -532,29 +463,36 @@ void RADIO_UpdateActiveChannelFlags (void)
 			 (data.ch[ch] < (RADIO_CH_MIN - RADIO_INPUT_THRESHOLD)) ||
 			 (data.ch[ch] > (RADIO_CH_MAX + RADIO_INPUT_THRESHOLD)) )
 		{
-			data.chActive[ch] = chActive_False;
+			data.chActive[ch] = chOFF;
 		}
 		// CHECK IF THE INPUT EXCEEDS THE POSITIVE ACTIVE THRESHOLD
 		else if (data.ch[ch] >= (data.chZero[ch] + RADIO_INPUT_THRESHOLD))
 		{
-			data.chActive[ch] = chActive_True;
+			data.chActive[ch] = chFWD;
 		}
 		// CHECK IF THE INPUT EXCEEDS THE NEGATIVE ACTIVE THRESHOLD
 		else if (data.ch[ch] <= (data.chZero[ch] - RADIO_INPUT_THRESHOLD))
 		{
-			data.chActive[ch] = chActive_TrueRev;
+			data.chActive[ch] = chRVS;
 		}
 		// CHECK IF THE INPUT IS WITHIN THE NEUTRAL/ZERO BAND
 		else if ( (data.ch[ch] <= (data.chZero[ch] + RADIO_ZERO_THRESHOLD)) &&
 				  (data.ch[ch] >= (data.chZero[ch] - RADIO_ZERO_THRESHOLD)) )
 		{
-			data.chActive[ch] = chActive_False;
+			data.chActive[ch] = chOFF;
 		}
 	}
 }
 
-/*
- * INTERRUPT ROUTINES
- */
 
-/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* EVENT HANDLERS   									*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* INTERRUPT ROUTINES									*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
