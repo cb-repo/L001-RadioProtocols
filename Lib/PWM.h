@@ -11,7 +11,7 @@
 #include "GPIO.h"
 #include "TIM.h"
 
-#include "RadioCommon.h"
+#include "Radio.h"
 
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
@@ -57,12 +57,14 @@
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 
-void 				PWM_Init 		( void );
-void 				PWM_Deinit 		( void );
-bool 				PWM_Detect		( void );
-void 				PWM_Update 		( void );
+void 		PWM_Init 		( void );
+void 		PWM_Deinit 		( void );
+bool 		PWM_Detect		( void );
+void 		PWM_Update 		( void );
 
-RADIO_dataModule*	PWM_getDataPtr 	( void );
+
+uint32_t*	PWM_getPtrData 	( void );
+bool* 		PWM_getPtrFault ( void );
 
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */

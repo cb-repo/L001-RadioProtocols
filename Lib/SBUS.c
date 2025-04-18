@@ -57,6 +57,8 @@ uint8_t rxSBUS[2*SBUS_PAYLOAD_LEN] = {0};
 bool rxHeartbeatSBUS = false;
 SBUS_Data dataSBUS = {0};
 
+uint32_t baudConfig = 0;
+
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PUBLIC FUNCTIONS										*/
@@ -74,6 +76,7 @@ void SBUS_Init ( uint32_t baud )
 	memset(rxSBUS, 0, sizeof(rxSBUS));
 	rxHeartbeatSBUS = false;
 	dataSBUS.inputLost = true;
+	baudConfig = baud;
 
 	UART_Init(SBUS_UART, baud, UART_Mode_Inverted);
 	UART_ReadFlush(SBUS_UART);
@@ -98,9 +101,10 @@ void SBUS_Deinit ( void )
  * INPUTS:
  * OUTPUTS:
  */
-bool SBUS_Detect ( uint32_t baud )
+bool SBUS_Detect ( void )
 {
-	SBUS_Init(baud);
+	// First Try initialisation at SBUS_BAUD rate
+	SBUS_Init(SBUS_BAUD);
 
 	uint32_t tick = CORE_GetTick();
 	while ((SBUS_TIMEOUT_FS * 2) > CORE_GetTick() - tick)
@@ -109,9 +113,24 @@ bool SBUS_Detect ( uint32_t baud )
 		CORE_Idle();
 	}
 
+	// If  unsuccessful try at SBUS_BAUD_FAST
 	if ( dataSBUS.inputLost )
 	{
 		SBUS_Deinit();
+
+		SBUS_Init(SBUS_BAUD_FAST);
+
+		uint32_t tick = CORE_GetTick();
+		while ((SBUS_TIMEOUT_FS * 2) > CORE_GetTick() - tick)
+		{
+			SBUS_Update();
+			CORE_Idle();
+		}
+
+		if ( dataSBUS.inputLost )
+		{
+			SBUS_Deinit();
+		}
 	}
 
 	return !dataSBUS.inputLost;

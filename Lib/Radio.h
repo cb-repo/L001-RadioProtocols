@@ -7,14 +7,11 @@
 
 #include "STM32X.h"
 
-#include "RadioCommon.h"
+#include "Core.h"
+//#include "GPIO.h"
+//#include "TIM.h"
 
-#if defined(RADIO_USE_PWM)
 #include "PWM.h"
-#endif
-#if defined(RADIO_USE_CRSF)
-#include "CRSF.h"
-#endif
 #if defined(RADIO_USE_PPM)
 #include "PPM.h"
 #endif
@@ -24,6 +21,9 @@
 #if defined(RADIO_USE_SBUS)
 #include "SBUS.h"
 #endif
+#if defined(RADIO_USE_CRSF)
+#include "CRSF.h"
+#endif
 
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
@@ -31,27 +31,82 @@
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 
+// SIMPLE MIN MAX MACRO
+//#define RADIO_MIN(X, Y)        (((X) < (Y)) ? (X) : (Y))
+//#define RADIO_MAX(X, Y)        (((X) > (Y)) ? (X) : (Y))
+
+// SIMPLE BIT-TWIDDLING
+//#define RADIO_GETBIT(var, bit) (((var) >> (bit)) & 1)
+//#define RADIO_SETBIT(var, bit) (var |= (1U << (bit)))
+//#define RADIO_RSTBIT(var, bit) (var &= ~(1U << (bit)))
+
+// CHANNEL COUNTS AND RANGES
+#define RADIO_CH_NUM_MAX       16
+
+#define RADIO_CH_MIN           1000
+#define RADIO_CH_CENTER        1500
+#define RADIO_CH_MAX           2000
+#define RADIO_CH_STRETCH       300
+#define RADIO_CH_ERROR         50
+#define RADIO_CH_DEADBAND      50
+
+#define RADIO_CH_ABSMIN        (RADIO_CH_MIN    - RADIO_CH_STRETCH - RADIO_CH_ERROR)
+#define RADIO_CH_ABSMAX        (RADIO_CH_MAX    + RADIO_CH_STRETCH + RADIO_CH_ERROR)
+#define RADIO_CH_CENTERMIN     (RADIO_CH_CENTER - RADIO_CH_DEADBAND)
+#define RADIO_CH_CENTERMAX     (RADIO_CH_CENTER + RADIO_CH_DEADBAND)
+
+#define RADIO_CH_HALFSCALE     (RADIO_CH_MAX - RADIO_CH_CENTER)
+#define RADIO_CH_FULLSCALE     (RADIO_CH_MAX - RADIO_CH_MIN)
+
+
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PUBLIC TYPES      									*/
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 
-typedef struct {
-	bool 			inputLost;
-	bool			allFault;
-	bool			anyFault;
-	bool 			chFault[ RADIO_CH_NUM_MAX ];
-	uint32_t 		ch[ RADIO_CH_NUM_MAX ];
-	uint8_t 		ch_num;
-	RADIO_chActive	chActive[ RADIO_CH_NUM_MAX ];
-	bool			chZeroSet;
-	uint32_t		chZero[RADIO_CH_NUM_MAX];
-} RADIO_data;
+typedef enum {
+	PWM,
+#if defined(RADIO_USE_PPM)
+    PPM,
+#endif
+#if defined(RADIO_USE_IBUS)
+    IBUS,
+#endif
+#if defined(RADIO_USE_SBUS)
+    SBUS,
+#endif
+#if defined(RADIO_USE_CRSF)
+    CRSF
+#endif
+	RADIO_NUM_PROTOCOL,
+} RADIO_protocol;
 
-typedef struct {
-	uint32_t 		baudSBUS;
-	RADIO_protocol	protocol;
-} RADIO_config;
+
+typedef enum {
+    CH1,  CH2,  CH3,  CH4,
+    CH5,  CH6,  CH7,  CH8,
+    CH9,  CH10, CH11, CH12,
+    CH13, CH14, CH15, CH16
+} RADIO_chIndex;
+
+
+typedef enum {
+    chOFF,
+    chFWD,
+    chRVS
+} RADIO_chActive;
+
+
+//typedef struct {
+//    bool            allFault;
+//    bool            anyFault;
+//    bool            chFault[RADIO_CH_NUM_MAX];
+//    uint32_t        ch[RADIO_CH_NUM_MAX];
+//    uint8_t         ch_num;     	/* how many channels this protocol provides */
+//    bool            chZeroSet;		/* have we recorded “trim” positions? */
+//    uint32_t        chZero[RADIO_CH_NUM_MAX];
+//    RADIO_chActive  chActive[RADIO_CH_NUM_MAX];
+//} RADIO_data;
 
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
@@ -59,19 +114,23 @@ typedef struct {
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 
-uint8_t 	RADIO_Init 						( RADIO_config * );
-bool		RADIO_Detect					( RADIO_config * );
-void 		RADIO_Update 					( void );
+RADIO_protocol	RADIO_Init 				( RADIO_protocol );
+void 			RADIO_Update 			( void );
 
-RADIO_data*	RADIO_getDataPtr				( void );
-void		RADIO_setChannelZeroPosition	( void );
-bool 		RADIO_inFaultState 				( void );
+uint32_t* 		RADIO_getPtrData 		( void );
+uint32_t* 		RADIO_getPtrFault 		( void );
+uint8_t 		RADIO_getChCount		( void );
+RADIO_chActive* RADIO_getActivePtr 		( void );
+//void 			RADIO_setChZeroPos		( void );
+
+bool 			RADIO_inFaultStateCH   	( RADIO_chIndex );
+bool 			RADIO_inFaultStateALL	( void );
+bool 			RADIO_inFaultStateANY	( void );
 
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* EXTERN DECLARATIONS									*/
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
-
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 #endif /* RADIO_H */

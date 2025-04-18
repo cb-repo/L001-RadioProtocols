@@ -18,6 +18,12 @@
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 
+typedef struct {
+    uint16_t pin;
+    void (*irqHandler)(void);
+} pwm_channel_t;
+
+
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PRIVATE PROTOTYPES									*/
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
@@ -25,15 +31,16 @@
 
 static void PWM_Process ( RADIO_chIndex );
 
-static void 	PWM_CH1_IRQ 	( void );
+static void PWM_IRQ 	( RADIO_chIndex );
+static void PWM_CH1_IRQ ( void );
 #if PWM_CH_NUM >= 2
-static void 	PWM_CH2_IRQ 	( void );
+static void PWM_CH2_IRQ ( void );
 #endif
 #if PWM_CH_NUM >= 3
-static void 	PWM_CH3_IRQ 	( void );
+static void PWM_CH3_IRQ ( void );
 #endif
 #if PWM_CH_NUM >= 4
-static void 	PWM_CH4_IRQ 	( void );
+static void PWM_CH4_IRQ ( void );
 #endif
 #if PWM_CH_NUM > 4
 #error // Too Many Channels Defined
@@ -45,8 +52,24 @@ static void 	PWM_CH4_IRQ 	( void );
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 
-static volatile uint32_t rx[ PWM_CH_NUM ];
-RADIO_dataModule dataPWM;
+static const pwm_channel_t pwmChannels[PWM_CH_NUM] = {	{ PWM_CH1_Pin, PWM_CH1_IRQ },
+#if PWM_CH_NUM >= 2
+    { PWM_CH2_Pin, PWM_CH2_IRQ },
+#endif
+#if PWM_CH_NUM >= 3
+    { PWM_CH3_Pin, PWM_CH3_IRQ },
+#endif
+#if PWM_CH_NUM >= 4
+    { PWM_CH4_Pin, PWM_CH4_IRQ },
+#endif
+};
+
+// Raw Pulse Widths Captured in IQR
+static volatile uint32_t	rx[ PWM_CH_NUM ];
+
+// Processed Channel Values and Fault Flags
+uint32_t    ch[ PWM_CH_NUM ];
+bool    	chFault[ PWM_CH_NUM ];
 
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
@@ -65,32 +88,19 @@ void PWM_Init ( void )
 	// RESET RADIO DATA ARRAYS
 	for (uint8_t ch = 0; ch < PWM_CH_NUM; ch++) {
 		rx[ch] = 0;
-		dataPWM.ch[ch] = 0;
-		dataPWM.chActive[ch] = chOFF;
-		dataPWM.chFault[ch] = true;
-		dataPWM.allFault = true;
-		dataPWM.anyFault = true;
+		ch[ch] = 0;
+		chFault[ch] = true;
 	}
 
 	// START TIMER TO MEASURE PULSE WIDTHS
 	TIM_Init(  TIM_RADIO, TIM_RADIO_FREQ, TIM_RADIO_RELOAD );
 	TIM_Start( TIM_RADIO );
 
-	// SETUP GPIO AS INPUTS AND ASSIGN IRQ
-	GPIO_EnableInput(	PWM_CH1_Pin, GPIO_Pull_Down);
-	GPIO_OnChange(		PWM_CH1_Pin, GPIO_IT_Both, PWM_CH1_IRQ );
-	#if PWM_CH_NUM >= 2
-	GPIO_EnableInput(	PWM_CH2_Pin, GPIO_Pull_Down);
-	GPIO_OnChange(		PWM_CH2_Pin, GPIO_IT_Both, PWM_CH2_IRQ );
-	#endif
-	#if PWM_CH_NUM >= 3
-	GPIO_EnableInput(	PWM_CH3_Pin, GPIO_Pull_Down);
-	GPIO_OnChange(		PWM_CH3_Pin, GPIO_IT_Both, PWM_CH3_IRQ );
-	#endif
-	#if PWM_CH_NUM >= 4
-	GPIO_EnableInput(	PWM_CH4_Pin, GPIO_Pull_Down);
-	GPIO_OnChange(		PWM_CH4_Pin, GPIO_IT_Both, PWM_CH4_IRQ );
-	#endif
+	// CONFIGURE EACH INPUT PIN AND ASSIGN IRQ
+	for ( uint8_t c = CH1; c < PWM_CH_NUM; c++ ) {
+		GPIO_EnableInput(	pwmChannels[i].pin, GPIO_Pull_Down);
+		GPIO_OnChange(		pwmChannels[i].pin, GPIO_IT_Both, pwmChannels[i].irqHandler );
+	}
 
 	// RUN A PWM DATA UPDATE BEFORE PROGRESSING
 	PWM_Update();
@@ -109,20 +119,10 @@ void PWM_Deinit ( void )
 	TIM_Deinit(TIM_RADIO);
 
 	// DEINITIALISE AND UNASIGN IRQ FOR EACH RADIO INPUT PIN
-	GPIO_OnChange(	PWM_CH1_Pin, GPIO_IT_None, NULL );
-	GPIO_Deinit(	PWM_CH1_Pin );
-	#if PWM_CH_NUM >= 2
-	GPIO_OnChange(	PWM_CH2_Pin, GPIO_IT_None, NULL );
-	GPIO_Deinit(	PWM_CH2_Pin );
-	#endif
-	#if PWM_CH_NUM >= 3
-	GPIO_OnChange(	PWM_CH3_Pin, GPIO_IT_None, NULL );
-	GPIO_Deinit(	PWM_CH3_Pin );
-	#endif
-	#if PWM_CH_NUM >= 4
-	GPIO_OnChange(	PWM_CH4_Pin, GPIO_IT_None, NULL );
-	GPIO_Deinit(	PWM_CH4_Pin );
-	#endif
+	for ( uint8_t c = CH1; c < PWM_CH_NUM; c++ ) {
+		GPIO_OnChange(	pwmChannels[i].pin, GPIO_IT_None, NULL );
+		GPIO_Deinit(	pwmChannels[i].pin );
+	}
 }
 
 
@@ -140,27 +140,34 @@ bool PWM_Detect ( void )
 {
 	// INITIALSIE FUNCTION VARIABLES
 	uint32_t tick = CORE_GetTick();
-	bool retVal = false;
 
 	// RUN PWM PROTOCOL DETECTION
 	PWM_Init();
 	while ( PWM_DETECT_MS > (CORE_GetTick() - tick) )
 	{
+		// comment
 		PWM_Update();
-		if ( !dataPWM.allFault ) {
-			retVal = true;
-			break;
+
+		//
+		bool noFaults = true;
+		for ( uint8_t c = CH1; c < PWM_CH_MAX; c++ ) {
+			if ( chFault[c] ) {
+				noFaults = false;
+				break;
+			}
 		}
+
+		//
+		if ( noFaults ) {
+			return true;
+		}
+
 		CORE_Idle();
 	}
 
 	// DEINITIALISE IF NO RADIO DETECTED
-	if ( !retVal ) 	{
-		PWM_Deinit();
-	}
-
-	//
-	return retVal;
+	PWM_Deinit();
+	return false;
 }
 
 
@@ -175,80 +182,58 @@ bool PWM_Detect ( void )
 void PWM_Update ( void )
 {
 	// INITIALISE FUCNTION VARIABLES
-	static uint32_t tick[ PWM_CH_NUM ] = { 0 };
-	static uint8_t 	validData[ PWM_CH_NUM ] = { 0 };
-
-	uint32_t now = CORE_GetTick();
+	static uint32_t tick[ PWM_CH_NUM ] 		= {0};
+	static uint8_t 	validCount[ PWM_CH_NUM ]	= {0};
+	uint32_t 		now 					= CORE_GetTick();
 
 	// ITTERATE THROUGH EACH CHANNEL
-	for ( uint8_t ch = CH1; ch < PWM_CH_NUM; ch++ )
+	for ( uint8_t c = CH1; c < PWM_CH_NUM; c++ )
 	{
 		// STATE - TIMEDOUT (OR STARTUP)
-		if ( dataPWM.chFault[ch] )
+		if ( chFault[c] )
 		{
 			// CHECK FOR DATA IN THE RECIEVE BUFFER
-			if ( rx[ch] )
-			{
-				// INCREMENT VALID DATA COUNTER
-				validData[ch] += 1;
+			if ( rx[c] ) {
 				// HAVE WE REACHED TIME IN CONDITION
-				if ( validData[ch] >= PWM_TIMEIN_CYCLES ) {
+				if ( ++validCount[c] >= PWM_TIMEIN_CYCLES ) {
 					// RESET FAULT FLAG AND PROCEED TO NORMAL OPERATION - DONT RESET RX ARRAY
-					dataPWM.chFault[ch] = false;
+					chFault[c] = false;
 				} else {
 					// RESET DATA FOR NEXT LOOP
-					rx[ch] = 0;
-					tick[ch] = now;
+					rx[c] = 0;
+					tick[c] = now;
 				}
 			}
 			// CHECK FOR TIMEIN COUNT RESET
-			else if ( validData[ch] && ((now - tick[ch]) >= PWM_PERIOD_MAX_MS) )
-			{
-				validData[ch] = 0;
-				tick[ch] = now;
+			else if ( validCount[c] && (now - tick[c] >= PWM_PERIOD_MAX_MS) ) {
+				validCount[c] = 0;
+				tick[c] = now;
 			}
 		}
 
 		// STATE - NORMAL OPERATION
-		if ( !dataPWM.chFault[ch] )
+		if ( !chFault[c] )
 		{
 			// CHECK FOR NEW DATA
-			if ( rx[ch] )
+			if ( rx[c] )
 			{
 				// PROCESS DATA
-				PWM_Process(ch);
+				PWM_Process(c);
 				// RESET RELEVANT FLAGS
-				tick[ch] = now;
+				tick[c] = now;
 			}
 
 			// CHECK FOR TIMEOUT CONDITION
-			else if ((now - tick[ch]) >= PWM_TIMEOUT_MS)
+			else if ( now - tick[c] >= PWM_TIMEOUT_MS )
 			{
 				// SET RELEVANT FLAGS
-				dataPWM.chFault[ch] = true;
-				dataPWM.ch[ch] = 0;
-				dataPWM.chActive[ch] = chOFF;
-				tick[ch] = now;
-				validData[ch] = 0;
+				chFault[c] = true;
+				ch[c] = 0;
+				tick[c] = now;
+				validCount[c] = 0;
 			}
 		}
 	}
-
-	//
-	#if PWM_CH_NUM >= 4
-	dataPWM.allFault = dataPWM.chFault[CH1] && dataPWM.chFault[CH2] && dataPWM.chFault[CH3] && dataPWM.chFault[CH4];
-	dataPWM.anyFault = dataPWM.chFault[CH1] || dataPWM.chFault[CH2] || dataPWM.chFault[CH3] || dataPWM.chFault[CH4];
-	#elif PWM_CH_NUM >= 3
-	dataPWM.allFault = dataPWM.chFault[CH1] && dataPWM.chFault[CH2] && dataPWM.chFault[CH3];
-	dataPWM.anyFault = dataPWM.chFault[CH1] || dataPWM.chFault[CH2] || dataPWM.chFault[CH3];
-	#elif PWM_CH_NUM >= 2
-	dataPWM.allFault = dataPWM.chFault[CH1] && dataPWM.chFault[CH2];
-	dataPWM.anyFault = dataPWM.chFault[CH1] || dataPWM.chFault[CH2];
-	#else
-	dataPWM.allFault = dataPWM.chFault[CH1];
-	dataPWM.anyFault = dataPWM.chFault[CH1];
-	#endif
-
 }
 
 
@@ -258,9 +243,21 @@ void PWM_Update ( void )
  * INPUTS: n/a
  * OUTPUTS: Pointer of type RADIO_data
  */
-RADIO_dataModule* PWM_getDataPtr ( void )
+uint32_t* PWM_getPtrData ( void )
 {
-	return &dataPWM;
+	return &ch;
+}
+
+
+/*
+ * RETRIEVED A POINTER TO
+ *
+ * INPUTS: n/a
+ * OUTPUTS: Pointer of type RADIO_data
+ */
+bool* PWM_getPtrFault ( void )
+{
+	return &chFault;
 }
 
 
@@ -278,30 +275,19 @@ RADIO_dataModule* PWM_getDataPtr ( void )
 static void PWM_Process ( RADIO_chIndex c )
 {
 	// EXTRACT DATA AND RESET TEMP ARRAY
-	uint32_t r = rx[c];
+	uint32_t pulse = rx[c];
 	rx[c] = 0;
 
 	// TRUNCATE RADIO DATA AND MOVE TO OUTBOUND ARRAY
 	// WE ALREADY KNOW DATA IS GREATER THAN RADIO_CH_ABSMIN AND SMALLER THAN RADIO_CH_ABSMAX
-	if ( r < RADIO_CH_MIN ) {
-		dataPWM.ch[c] = RADIO_CH_MIN;
+	if ( pulse < RADIO_CH_MIN ) {
+		ch[c] = RADIO_CH_MIN;
 	}
-	else if ( r > RADIO_CH_MAX ) {
-		dataPWM.ch[c] = RADIO_CH_MIN;
-	}
-	else {
-		dataPWM.ch[c] = r;
-	}
-
-	// UPDATE CHANNEL'S ACTIVE FLAG
-	if ( r > RADIO_CH_CENTERMAX ) {
-		dataPWM.chActive[c] = chFWD;
-	}
-	else if ( r < RADIO_CH_CENTERMIN ) {
-		dataPWM.chActive[c] = chRVS;
+	else if ( pulse > RADIO_CH_MAX ) {
+		ch[c] = RADIO_CH_MAX;
 	}
 	else {
-		dataPWM.chActive[c] = chOFF;
+		ch[c] = pulse;
 	}
 }
 
@@ -316,125 +302,68 @@ static void PWM_Process ( RADIO_chIndex c )
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 
-static void PWM_CH1_IRQ ( void )
+static void PWM_IRQ ( RADIO_chIndex c )
 {
 	// INITIALISE LOOP VARIABLES
-	uint32_t 		now 		= TIM_Read(TIM_RADIO);
-	bool 			pos 		= GPIO_Read(PWM_CH1_Pin);
-	static bool 	pos_p 		= false;
-	static uint32_t	tickHigh 	= 0;
-	static uint32_t tickLow 	= 0;
+	uint32_t 		now 					= TIM_Read(TIM_RADIO);
+	bool 			pos 					= GPIO_Read(pwmChannels[i].pin);
+	static bool 	pos_p[PWM_CH_NUM]		= {false};
+	static uint32_t	tickHigh[PWM_CH_NUM] 	= {0};
+	static uint32_t	tickLow[PWM_CH_NUM] 	= {0};
 
 	// IGNORE NOISE ON SIGNAL I/P THAT RETURNS FASTER THAN INTERRRUPT SERVICE
-	if ( pos_p != pos )
+	if ( pos != pos_p[c] )
 	{
 		// RISING EDGE PULSE DETECTED
 		if ( pos ) {
 			// ASSIGN VARIABLES TO USE ON PULSE LOW
-			tickHigh = now;
+			tickHigh[c] = now;
 		}
 		// FALLING EDGE PULSE DETECTED
 		else {
 			// CALCULATE SIGNAL PERIOD AND PULSE WIDTH
-			uint32_t period = now - tickLow;
-			uint32_t pulse = now - tickHigh;
+			uint32_t period = now - tickLow[c];
+			uint32_t pulse = now - tickHigh[c];
 			// CHECK SIGNAL IS VALID
 			if ( pulse <= RADIO_CH_ABSMAX 		&& pulse >= RADIO_CH_ABSMIN &&
 				 period <= PWM_PERIOD_MAX_US	&& period >= PWM_PERIOD_MIN_US )
 			{
 				// ASSIGN PULSE TO TEMP DATA ARRAY
-				rx[CH1] = pulse;
+				rx[c] = pulse;
 			}
 			// UPDATE VARIABLES FOR NEXT LOOP
-			tickLow = now;
+			tickLow[c] = now;
 		}
-	}
 
-	//
-	pos_p = pos;
+		//
+		pos_p[c] = pos;
+	}
 }
 
+
+static void PWM_CH1_IRQ(void)
+{
+	PWM_CaptureIRQHandler(CH1);
+}
 
 #if PWM_CH_NUM >= 2
-static void PWM_CH2_IRQ ( void )
+static void PWM_CH2_IRQ(void)
 {
-	uint32_t 		now 		= TIM_Read(TIM_RADIO);
-	bool 			pos 		= GPIO_Read(PWM_CH2_Pin);
-	static bool 	pos_p 		= false;
-	static uint32_t	tickHigh 	= 0;
-	static uint32_t tickLow 	= 0;
-
-	if ( pos_p != pos ) {
-		if ( pos ) {
-			tickHigh = now;
-		} else {
-			uint32_t period = now - tickLow;
-			uint32_t pulse = now - tickHigh;
-			if ( pulse <= RADIO_CH_ABSMAX 		&& pulse >= RADIO_CH_ABSMIN &&
-				 period <= PWM_PERIOD_MAX_US	&& period >= PWM_PERIOD_MIN_US )
-			{
-				rx[CH2] = pulse;
-			}
-			tickLow = now;
-		}
-	}
-	pos_p = pos;
+	PWM_CaptureIRQHandler(CH2);
 }
 #endif
-
 
 #if PWM_CH_NUM >= 3
-static void PWM_CH3_IRQ ( void )
+static void PWM_CH3_IRQ(void)
 {
-	uint32_t 		now 		= TIM_Read(TIM_RADIO);
-	bool 			pos 		= GPIO_Read(PWM_CH3_Pin);
-	static bool 	pos_p 		= false;
-	static uint32_t	tickHigh 	= 0;
-	static uint32_t tickLow 	= 0;
-
-	if ( pos_p != pos ) {
-		if ( pos ) {
-			tickHigh = now;
-		} else {
-			uint32_t period = now - tickLow;
-			uint32_t pulse = now - tickHigh;
-			if ( pulse <= RADIO_CH_ABSMAX 		&& pulse >= RADIO_CH_ABSMIN &&
-				 period <= PWM_PERIOD_MAX_US	&& period >= PWM_PERIOD_MIN_US )
-			{
-				rx[CH3] = pulse;
-			}
-			tickLow = now;
-		}
-	}
-	pos_p = pos;
+	PWM_CaptureIRQHandler(CH3);
 }
 #endif
 
-
 #if PWM_CH_NUM >= 4
-static void PWM_CH4_IRQ ( void )
+static void PWM_CH4_IRQ(void)
 {
-	uint32_t 		now 		= TIM_Read(TIM_RADIO);
-	bool 			pos 		= GPIO_Read(PWM_CH4_Pin);
-	static bool 	pos_p 		= false;
-	static uint32_t	tickHigh 	= 0;
-	static uint32_t tickLow 	= 0;
-
-	if ( pos_p != pos ) {
-		if ( pos ) {
-			tickHigh = now;
-		} else {
-			uint32_t period = now - tickLow;
-			uint32_t pulse = now - tickHigh;
-			if ( pulse <= RADIO_CH_ABSMAX 		&& pulse >= RADIO_CH_ABSMIN &&
-				 period <= PWM_PERIOD_MAX_US	&& period >= PWM_PERIOD_MIN_US )
-			{
-				rx[CH4] = pulse;
-			}
-			tickLow = now;
-		}
-	}
-	pos_p = pos;
+	PWM_CaptureIRQHandler(CH4);
 }
 #endif
 

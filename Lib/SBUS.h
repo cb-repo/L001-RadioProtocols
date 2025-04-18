@@ -12,8 +12,6 @@
 #include "GPIO.h"
 #include "US.h"
 
-#include "RadioCommon.h"
-
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PUBLIC DEFINITIONS									*/
@@ -61,7 +59,7 @@ typedef struct {
 
 void 		SBUS_Init 		( uint32_t );
 void 		SBUS_Deinit 	( void );
-bool 		SBUS_DetInit 	( uint32_t );
+bool 		SBUS_Detect 	( void );
 void 		SBUS_Update 	( void );
 
 SBUS_Data*	SBUS_getDataPtr	( void );

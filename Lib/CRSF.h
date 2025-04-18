@@ -11,8 +11,6 @@
 #include "GPIO.h"
 #include "TIM.h"
 
-#include "RadioCommon.h"
-
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PUBLIC DEFINITIONS									*/
@@ -26,6 +24,15 @@
 /* PUBLIC TYPES      									*/
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
+
+typedef struct {
+    uint16_t ch[16];
+    bool failsafe;
+    bool frameLost;
+    bool inputLost;
+} CRSF_Data;
+
+
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PUBLIC FUNCTIONS										*/
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
@@ -35,7 +42,7 @@ void CRSF_Init 				( void );
 void CRSF_Deinit 			( void );
 void CRSF_Detect 			( void );
 void CRSF_Update 			( void );
-RADIO_data* CRSF_getDataPtr	( void );
+CRSF_Data* CRSF_getDataPtr	( void );
 
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */

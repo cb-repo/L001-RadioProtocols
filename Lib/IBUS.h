@@ -12,8 +12,6 @@
 #include "GPIO.h"
 #include "US.h"
 
-#include "RadioCommon.h"
-
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PUBLIC DEFINITIONS									*/
