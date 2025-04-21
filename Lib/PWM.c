@@ -3,8 +3,6 @@
 
 #include "PWM.h"
 
-#if defined(RADIO_USE_PWM)
-
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PRIVATE DEFINITIONS									*/
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
@@ -64,10 +62,8 @@ static const pwm_channel_t pwmChannels[PWM_CH_NUM] = {	{ PWM_CH1_Pin, PWM_CH1_IR
 #endif
 };
 
-// Raw Pulse Widths Captured in IQR
 static volatile uint32_t	rx[ PWM_CH_NUM ];
 
-// Processed Channel Values and Fault Flags
 uint32_t    ch[ PWM_CH_NUM ];
 bool    	chFault[ PWM_CH_NUM ];
 
@@ -86,10 +82,10 @@ bool    	chFault[ PWM_CH_NUM ];
 void PWM_Init ( void )
 {
 	// RESET RADIO DATA ARRAYS
-	for (uint8_t ch = 0; ch < PWM_CH_NUM; ch++) {
-		rx[ch] = 0;
-		ch[ch] = 0;
-		chFault[ch] = true;
+	for (uint8_t c = 0; c < PWM_CH_NUM; c++) {
+		rx[c] = 0;
+		ch[c] = 0;
+		chFault[c] = true;
 	}
 
 	// START TIMER TO MEASURE PULSE WIDTHS
@@ -98,8 +94,8 @@ void PWM_Init ( void )
 
 	// CONFIGURE EACH INPUT PIN AND ASSIGN IRQ
 	for ( uint8_t c = CH1; c < PWM_CH_NUM; c++ ) {
-		GPIO_EnableInput(	pwmChannels[i].pin, GPIO_Pull_Down);
-		GPIO_OnChange(		pwmChannels[i].pin, GPIO_IT_Both, pwmChannels[i].irqHandler );
+		GPIO_EnableInput(	pwmChannels[c].pin, GPIO_Pull_Down);
+		GPIO_OnChange(		pwmChannels[c].pin, GPIO_IT_Both, pwmChannels[c].irqHandler );
 	}
 
 	// RUN A PWM DATA UPDATE BEFORE PROGRESSING
@@ -120,8 +116,8 @@ void PWM_Deinit ( void )
 
 	// DEINITIALISE AND UNASIGN IRQ FOR EACH RADIO INPUT PIN
 	for ( uint8_t c = CH1; c < PWM_CH_NUM; c++ ) {
-		GPIO_OnChange(	pwmChannels[i].pin, GPIO_IT_None, NULL );
-		GPIO_Deinit(	pwmChannels[i].pin );
+		GPIO_OnChange(	pwmChannels[c].pin, GPIO_IT_None, NULL );
+		GPIO_Deinit(	pwmChannels[c].pin );
 	}
 }
 
@@ -150,7 +146,7 @@ bool PWM_Detect ( void )
 
 		//
 		bool noFaults = true;
-		for ( uint8_t c = CH1; c < PWM_CH_MAX; c++ ) {
+		for ( uint8_t c = CH1; c < PWM_CH_NUM; c++ ) {
 			if ( chFault[c] ) {
 				noFaults = false;
 				break;
@@ -245,7 +241,7 @@ void PWM_Update ( void )
  */
 uint32_t* PWM_getPtrData ( void )
 {
-	return &ch;
+	return ch;
 }
 
 
@@ -257,7 +253,7 @@ uint32_t* PWM_getPtrData ( void )
  */
 bool* PWM_getPtrFault ( void )
 {
-	return &chFault;
+	return chFault;
 }
 
 
@@ -306,7 +302,7 @@ static void PWM_IRQ ( RADIO_chIndex c )
 {
 	// INITIALISE LOOP VARIABLES
 	uint32_t 		now 					= TIM_Read(TIM_RADIO);
-	bool 			pos 					= GPIO_Read(pwmChannels[i].pin);
+	bool 			pos 					= GPIO_Read(pwmChannels[c].pin);
 	static bool 	pos_p[PWM_CH_NUM]		= {false};
 	static uint32_t	tickHigh[PWM_CH_NUM] 	= {0};
 	static uint32_t	tickLow[PWM_CH_NUM] 	= {0};
@@ -343,31 +339,28 @@ static void PWM_IRQ ( RADIO_chIndex c )
 
 static void PWM_CH1_IRQ(void)
 {
-	PWM_CaptureIRQHandler(CH1);
+	PWM_IRQ(CH1);
 }
 
 #if PWM_CH_NUM >= 2
 static void PWM_CH2_IRQ(void)
 {
-	PWM_CaptureIRQHandler(CH2);
+	PWM_IRQ(CH2);
 }
 #endif
 
 #if PWM_CH_NUM >= 3
 static void PWM_CH3_IRQ(void)
 {
-	PWM_CaptureIRQHandler(CH3);
+	PWM_IRQ(CH3);
 }
 #endif
 
 #if PWM_CH_NUM >= 4
 static void PWM_CH4_IRQ(void)
 {
-	PWM_CaptureIRQHandler(CH4);
+	PWM_IRQ(CH4);
 }
 #endif
 
-
-/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
-#endif
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
