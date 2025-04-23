@@ -3,12 +3,28 @@
 
 #include "CRSF.h"
 
-#if defined(RADIO_USE_CRSF)
+#ifdef RADIO_USE_CRSF
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PRIVATE DEFINITIONS                               */
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
+#ifdef RADIO_USE_CRSF
+#ifndef CRSF_UART
+#error "error: CRSF_UART needs to be defined (e.g UART_1)"
+#endif
+#ifndef UART1_GPIO
+#error "error: UART1_GPIO needs to be defined (e.g GPIOB)"
+#endif
+#ifndef UART1_PINS
+#error "error: UART1_PINS needs to be defined (e.g GPIO_PIN_7)"
+#endif
+#ifndef UART1_AF
+#error "error: UART1_AF needs to be defined (e.g GPIO_AF0_USART1)"
+#endif
+#endif
+
+#define CRSF_BAUD	420000
 
 #define CRSF_HEADER_LEN              1
 #define CRSF_LENGTH_LEN              1
@@ -26,10 +42,7 @@
 #define CRSF_RC_CHANNELS_TYPE        0x16
 
 // Timeouts in milliseconds (adjust as needed)
-#define CRSF_TIMEOUT_IP              4
-
-// UART port (adjust as needed)
-#define CRSF_UART                    UART1
+#define CRSF_TIMEOUT_MS              4
 
 // Channel transformation constants (calibration values)
 #define CRSF_MIN                     172
@@ -39,36 +52,28 @@
 #define CRSF_RANGE                   (CRSF_MAX - CRSF_MIN)
 #define CRSF_MAP_MIN                 0
 
-
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PRIVATE TYPES                                     */
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
-
-
-typedef struct {
-    uint16_t ch[16];
-    bool failsafe;
-    bool frameLost;
-    bool inputLost;
-} CRSF_Data;
-
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PRIVATE PROTOTYPES                                */
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-
-uint16_t CRSF_Transform(uint16_t raw);
-static uint8_t CRSF_CalcChecksum(uint8_t *data, uint8_t len);
-
+static uint8_t 	CRSF_CalcCRC8	( const uint8_t *, uint8_t );
+static uint32_t	CRSF_Transform	( uint16_t );
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PRIVATE VARIABLES                                 */
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
+static uint8_t  packetBuffer[CRSF_RC_PACKET_LEN];
+static uint8_t  idx;
+static uint32_t	packetTick;
+static uint32_t	lastValidTick;
 
-static CRSF_Data dataCRSF = {0};
-
+static uint32_t	data[CRSF_CH_NUM]	= {0};
+static bool 	inputLost 			= {0};
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PUBLIC FUNCTIONS                                  */
@@ -77,160 +82,149 @@ static CRSF_Data dataCRSF = {0};
 
 /*
  * CRSF_Init
- *
- * Initialize the UART and CRSF variables.
+ *  -
  */
-void CRSF_Init(uint32_t baud)
+void CRSF_Init ( void )
 {
-    memset(&dataCRSF, 0, sizeof(dataCRSF));
-    dataCRSF.inputLost = true;
-    UART_Init(CRSF_UART, baud, UART_Mode_Normal);
-    UART_ReadFlush(CRSF_UART);
-}
+    memset( &data, 0, sizeof(data) );
+    inputLost = true;
 
+    idx           = 0;
+    packetTick    = 0;
+    lastValidTick = 0;
+    memset( packetBuffer, 0, sizeof(packetBuffer) );
+
+    UART_Init(		CRSF_UART, CRSF_BAUD, UART_Mode_Default );
+    UART_ReadFlush(	CRSF_UART );
+}
 
 /*
  * CRSF_Deinit
- *
- * Shut down the CRSF module.
+ *  -
  */
-void CRSF_Deinit(void)
+void CRSF_Deinit ( void )
 {
-    UART_Deinit(CRSF_UART);
+    UART_Deinit( CRSF_UART );
 }
-
 
 /*
  * CRSF_Detect
- *
- * Try to detect valid CRSF frames within a timeout period.
+ *  -
  */
-bool CRSF_Detect(uint32_t baud)
+bool CRSF_Detect ( void )
 {
-    CRSF_Init(baud);
-    uint32_t tick = CORE_GetTick();
-    while ((CRSF_TIMEOUT_IP * 10) > (CORE_GetTick() - tick))
+    CRSF_Init();
+    uint32_t start = CORE_GetTick();
+
+    while ( (CORE_GetTick() - start) < (CRSF_TIMEOUT_MS * 10) )
     {
-        CRSF_Update(); // Process any available data.
+        CRSF_Update();
         CORE_Idle();
     }
-    if (dataCRSF.inputLost)
-    {
-        CRSF_Deinit();
-    }
-    return !dataCRSF.inputLost;
-}
 
+    if ( inputLost )
+        CRSF_Deinit();
+
+    return inputLost;
+}
 
 /*
  * CRSF_Update
- *
- * Efficiently processes UART input by continuously reading available bytes,
- * building the packet, validating it, and then decoding the channels.
- *
- * This implementation eliminates the need for separate heartbeat flags.
+ *  -
  */
-void CRSF_Update(void)
+void CRSF_Update ( void )
 {
-    static uint8_t packetBuffer[CRSF_RC_PACKET_LEN] = {0};
-    static uint8_t idx = 0;              // Current index in packetBuffer.
-    static uint32_t packetTick = 0;      // Time when the first byte was received.
-    uint32_t now = CORE_GetTick();
+    uint8_t byte;
+    uint32_t now;
 
-    // Process available bytes from the UART.
-    while (UART_ReadCount(CRSF_UART) > 0)
+    // Process all bytes waiting in the UART FIFO
+    while ( UART_ReadCount(CRSF_UART) > 0 )
     {
-        uint8_t byte;
         UART_Read(CRSF_UART, &byte, 1);
+        now = CORE_GetTick();
 
-        // If we are not in the middle of assembling a packet, wait for the header.
-        if (idx == 0)
-        {
-            if (byte == CRSF_HEADER)
-            {
-                packetBuffer[0] = byte;
-                idx = 1;
-                packetTick = now;
+        // 1) Start of packet?
+        if ( idx == 0 ) {
+            if ( byte == CRSF_HEADER ) {
+                packetBuffer[0]	= byte;
+                idx           	= 1;
+                packetTick    	= now;
             }
-            // If byte is not a header, ignore it.
+            continue;
         }
-        else  // Already started packet assembly.
+
+        // 2) Continue assembling
+        packetBuffer[idx++] = byte;
+
+        // 2a) on idx==2 we now have length — validate it
+        if ( idx == 2 ) {
+            if ( packetBuffer[CRSF_LENGTH_INDEX] > CRSF_RC_PACKET_PAYLOAD_LEN ) {
+                idx = 0;  // bogus length ⇒ resync
+                continue;
+            }
+        }
+
+        // 2b) Once we've read header+length+payload+CRC, process
         {
-            packetBuffer[idx++] = byte;
+            uint8_t expectedLen = CRSF_HEADER_LEN + CRSF_LENGTH_LEN + packetBuffer[CRSF_LENGTH_INDEX] + CRSF_CHECKSUM_LEN;
 
-            // Once we have at least the header and length, check if the packet is complete.
-            if (idx == 2)
-            {
-                // Optionally, you could validate the expected length here.
-            }
-            if (idx >= 2)
-            {
-                // Expected packet length is defined by the length byte received.
-                uint8_t expectedLength = CRSF_HEADER_LEN + CRSF_LENGTH_LEN + packetBuffer[CRSF_LENGTH_INDEX] + CRSF_CHECKSUM_LEN;
-                if (idx >= expectedLength)
-                {
-                    // Verify checksum (all bytes except the last one).
-                    if (CRSF_CalcChecksum(packetBuffer, expectedLength - 1) == packetBuffer[expectedLength - 1])
-                    {
-                        // Packet is valid; decode if it is an RC channels packet.
-                        if (packetBuffer[CRSF_PAYLOAD_INDEX] == CRSF_RC_CHANNELS_TYPE)
-                        {
-                            // Decode channel data; decoding indices assume payload data starts at index 3.
-                            dataCRSF.ch[0]  = CRSF_Transform((uint16_t)(((packetBuffer[3]        | packetBuffer[4] << 8)) & 0x07FF));
-                            dataCRSF.ch[1]  = CRSF_Transform((uint16_t)(((packetBuffer[4] >> 3   | packetBuffer[5] << 5)) & 0x07FF));
-                            dataCRSF.ch[2]  = CRSF_Transform((uint16_t)(((packetBuffer[5] >> 6   | packetBuffer[6] << 2  | packetBuffer[7] << 10)) & 0x07FF));
-                            dataCRSF.ch[3]  = CRSF_Transform((uint16_t)(((packetBuffer[7] >> 1   | packetBuffer[8] << 7)) & 0x07FF));
-                            dataCRSF.ch[4]  = CRSF_Transform((uint16_t)(((packetBuffer[8] >> 4   | packetBuffer[9] << 4)) & 0x07FF));
-                            dataCRSF.ch[5]  = CRSF_Transform((uint16_t)(((packetBuffer[9] >> 7   | packetBuffer[10] << 1 | packetBuffer[11] << 9)) & 0x07FF));
-                            dataCRSF.ch[6]  = CRSF_Transform((uint16_t)(((packetBuffer[11] >> 2  | packetBuffer[12] << 6)) & 0x07FF));
-                            dataCRSF.ch[7]  = CRSF_Transform((uint16_t)(((packetBuffer[12] >> 5  | packetBuffer[13] << 3)) & 0x07FF));
+            if ( idx >= expectedLen ) {
+                // CRC8 over Type+Payload
+                if ( packetBuffer[CRSF_PAYLOAD_INDEX] == CRSF_RC_CHANNELS_TYPE && CRSF_CalcCRC8( &packetBuffer[CRSF_PAYLOAD_INDEX], packetBuffer[CRSF_LENGTH_INDEX] ) == packetBuffer[expectedLen-1] ) {
+                    // decode 16×11-bit channels from payload
+                    for ( int i = 0; i < 16; i++ ) {
+                        uint32_t bitOff = i * 11;
+                        uint32_t byteOff = CRSF_PAYLOAD_INDEX + (bitOff >> 3);
+                        uint32_t bitIn  = bitOff & 7;
 
-                            dataCRSF.ch[8]  = CRSF_Transform((uint16_t)(((packetBuffer[14]        | packetBuffer[15] << 8)) & 0x07FF));
-                            dataCRSF.ch[9]  = CRSF_Transform((uint16_t)(((packetBuffer[15] >> 3   | packetBuffer[16] << 5)) & 0x07FF));
-                            dataCRSF.ch[10] = CRSF_Transform((uint16_t)(((packetBuffer[16] >> 6   | packetBuffer[17] << 2 | packetBuffer[18] << 10)) & 0x07FF));
-                            dataCRSF.ch[11] = CRSF_Transform((uint16_t)(((packetBuffer[18] >> 1   | packetBuffer[19] << 7)) & 0x07FF));
-                            dataCRSF.ch[12] = CRSF_Transform((uint16_t)(((packetBuffer[19] >> 4   | packetBuffer[20] << 4)) & 0x07FF));
-                            dataCRSF.ch[13] = CRSF_Transform((uint16_t)(((packetBuffer[20] >> 7   | packetBuffer[21] << 1 | packetBuffer[22])) & 0x07FF));
-                            dataCRSF.ch[14] = CRSF_Transform((uint16_t)(((packetBuffer[22] >> 2   | packetBuffer[23] << 6)) & 0x07FF));
-                            dataCRSF.ch[15] = CRSF_Transform((uint16_t)(((packetBuffer[23] >> 5   | packetBuffer[24] << 3)) & 0x07FF));
-                        }
-                        // Mark data as valid.
-                        dataCRSF.inputLost = false;
+                        uint32_t raw = ( packetBuffer[byteOff] >> bitIn ) | ( packetBuffer[byteOff+1] << (8 - bitIn) );
+
+                        if ( bitIn > 5 )
+                            raw |= ( packetBuffer[byteOff+2] << (16 - bitIn) );
+
+                        data[i] = CRSF_Transform(raw & 0x07FF);
                     }
-                    // Packet complete (whether valid or not), so reset the assembly state.
-                    idx = 0;
-                }
-            }
 
-            // If too much time has passed while building a packet, reset.
-            if ((now - packetTick) > CRSF_TIMEOUT_IP)
-            {
+                    // clear status flags (no failsafe bits in this packet)
+                    inputLost  		= false;
+                    lastValidTick	= now;
+                }
+                // done with this packet
                 idx = 0;
             }
         }
+
+        // 3) timeout while assembling?
+        if ( (now - packetTick) > CRSF_TIMEOUT_MS )
+        {
+            idx = 0;
+        }
     }
 
-    // Failsafe: If no valid packet has been decoded for a while, mark input as lost.
-    static uint32_t lastValidTick = 0;
-    if (!dataCRSF.inputLost)
+    // 4) overall input-lost timeout
+    now = CORE_GetTick();
+    if ( (now - lastValidTick) >= (CRSF_TIMEOUT_MS * 10) )
     {
-        lastValidTick = now;
-    }
-    if ((now - lastValidTick) >= (CRSF_TIMEOUT_IP * 10))
-    {
-        dataCRSF.inputLost = true;
+        inputLost = true;
     }
 }
 
-
 /*
  * CRSF_getDataPtr
- *
- * Returns a pointer to the latest CRSF data.
+ *  -
  */
-CRSF_Data* CRSF_getDataPtr(void)
+uint32_t* CRSF_getDataPtr ( void )
 {
-    return &dataCRSF;
+    return data;
+}
+
+/*
+ * CRSF_getInputLost
+ *  -
+ */
+bool* CRSF_getInputLostPtr ( void )
+{
+    return &inputLost;
 }
 
 
@@ -241,46 +235,58 @@ CRSF_Data* CRSF_getDataPtr(void)
 
 /*
  * CRSF_Transform
- *
- * Transforms the raw 11-bit channel data using calibration parameters.
+ *  -
  */
-uint16_t CRSF_Transform(uint16_t raw)
+static uint32_t CRSF_Transform ( uint16_t raw )
 {
-    uint32_t retVal;
-    if (raw < (CRSF_MIN - CRSF_THRESHOLD))
-        retVal = 0;
-    else if (raw < CRSF_MIN)
-        retVal = CRSF_MIN;
-    else if (raw <= CRSF_MAX)
-        retVal = raw;
-    else if (raw < (CRSF_MAX + CRSF_THRESHOLD))
-        retVal = CRSF_MAX;
-    else
-        retVal = 0;
+    uint32_t v;
 
-    if (retVal)
-    {
-        retVal *= CRSF_MAP_RANGE;
-        retVal /= CRSF_RANGE;
-        retVal += CRSF_MAP_MIN;
-        retVal -= (CRSF_MIN * CRSF_MAP_RANGE / CRSF_RANGE);
+    if 		( raw < (CRSF_MIN - CRSF_THRESHOLD) )	{ v = 0; }
+    else if ( raw < CRSF_MIN)                    	{ v = CRSF_MIN; }
+    else if ( raw <= CRSF_MAX)                  	{ v = raw; }
+    else if ( raw < (CRSF_MAX + CRSF_THRESHOLD) )	{ v = CRSF_MAX; }
+    else                                        	{ v = 0; }
+
+    if ( v ) {
+    	v  = v * CRSF_MAP_RANGE / CRSF_RANGE;
+    	v += CRSF_MAP_MIN;
+    	v -= (CRSF_MIN * CRSF_MAP_RANGE / CRSF_RANGE);
     }
-    return (uint16_t)retVal;
+    return v;
 }
 
-
 /*
- * CRSF_CalcChecksum
- *
- * Calculates a simple XOR checksum for a buffer of data.
+ * CRSF_CalcCRC8
+ *  - CRC-8/D5 — initial 0, poly 0xD5, reflected = false
  */
-static uint8_t CRSF_CalcChecksum(uint8_t *data, uint8_t len)
+static uint8_t CRSF_CalcCRC8 ( const uint8_t *data, uint8_t len )
 {
     uint8_t crc = 0;
-    for (uint8_t i = 0; i < len; i++) {
+
+    for ( uint8_t i = 0; i < len; i++ )
+    {
         crc ^= data[i];
+
+        for ( uint8_t b = 0; b < 8; b++ )
+        {
+            if ( crc & 0x80) {
+            	crc = (crc << 1) ^ 0xD5;
+            } else {
+                crc <<= 1;
+            }
+        }
     }
     return crc;
 }
 
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* EVENT HANDLERS										*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+/* INTERRUPT ROUTINES									*/
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 #endif
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */

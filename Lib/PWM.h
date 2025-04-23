@@ -4,22 +4,18 @@
 #define PWM_H
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-
 #include "STM32X.h"
 
+#include "Radio.h"
 #include "Core.h"
 #include "GPIO.h"
 #include "TIM.h"
-
-#include "Radio.h"
-
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PUBLIC DEFINITIONS									*/
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-
-#if defined(PWM_CH_NUM)
+#ifdef PWM_CH_NUM
 #if PWM_CH_NUM > 4
 #error "PWM_CH_NUM cannot be greater than 4"
 #endif
@@ -47,7 +43,6 @@
 
 #define PWM_TIMEIN_CYCLES	3
 
-
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PUBLIC TYPES      									*/
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
@@ -56,21 +51,17 @@
 /* PUBLIC FUNCTIONS										*/
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
+void 		PWM_Init 			( void );
+void 		PWM_Deinit			( void );
+bool 		PWM_Detect			( void );
+void 		PWM_Update			( void );
 
-void 		PWM_Init 		( void );
-void 		PWM_Deinit 		( void );
-bool 		PWM_Detect		( void );
-void 		PWM_Update 		( void );
-
-
-uint32_t*	PWM_getPtrData 	( void );
-bool* 		PWM_getPtrFault ( void );
-
+uint32_t*	PWM_getDataPtr 		( void );
+bool* 		PWM_getInputLostPtr	( void );
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* EXTERN DECLARATIONS									*/
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
-
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 #endif /* PWM_H */

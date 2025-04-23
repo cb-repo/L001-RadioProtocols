@@ -7,43 +7,30 @@
 
 #include "STM32X.h"
 
+#include "UART.h"
 #include "Core.h"
-#include "GPIO.h"
-#include "TIM.h"
-
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PUBLIC DEFINITIONS									*/
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-
 #define CRSF_CH_NUM	16
-
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PUBLIC TYPES      									*/
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-
-typedef struct {
-    uint16_t ch[16];
-    bool failsafe;
-    bool frameLost;
-    bool inputLost;
-} CRSF_Data;
-
-
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PUBLIC FUNCTIONS										*/
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
+void 		CRSF_Init 				( void );
+void 		CRSF_Deinit 			( void );
+bool 		CRSF_Detect 			( void );
+void 		CRSF_Update 			( void );
 
-void CRSF_Init 				( void );
-void CRSF_Deinit 			( void );
-void CRSF_Detect 			( void );
-void CRSF_Update 			( void );
-CRSF_Data* CRSF_getDataPtr	( void );
-
+uint32_t*	CRSF_getDataPtr			( void );
+bool* 		CRSF_getInputLostPtr	( void );
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* EXTERN DECLARATIONS									*/

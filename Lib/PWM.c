@@ -7,29 +7,24 @@
 /* PRIVATE DEFINITIONS									*/
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-
 #define PWM_DETECT_MS	(PWM_TIMEIN_CYCLES * PWM_PERIOD_MAX_MS * 2)
-
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PRIVATE TYPES										*/
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-
 typedef struct {
-    uint32_t pin;
-    void (*irqHandler)(void);
-} pwm_channel_t;
-
+    uint32_t	pin;
+    void 		(*irqHandler)(void);
+} PWM_channels_t;
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PRIVATE PROTOTYPES									*/
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
+static void PWM_Process ( RADIO_chIndex_t );
 
-static void PWM_Process ( RADIO_chIndex );
-
-static void PWM_IRQ 	( RADIO_chIndex );
+static void PWM_IRQ 	( RADIO_chIndex_t );
 static void PWM_CH1_IRQ ( void );
 #if PWM_CH_NUM >= 2
 static void PWM_CH2_IRQ ( void );
@@ -44,29 +39,25 @@ static void PWM_CH4_IRQ ( void );
 #error // Too Many Channels Defined
 #endif
 
-
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PRIVATE VARIABLES									*/
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-
-static const pwm_channel_t pwmChannels[PWM_CH_NUM] = {	{ PWM_CH1_Pin, PWM_CH1_IRQ },
+static const PWM_channels_t pwmCh[PWM_CH_NUM] = {	{ PWM_CH1_Pin, PWM_CH1_IRQ },
 #if PWM_CH_NUM >= 2
-    { PWM_CH2_Pin, PWM_CH2_IRQ },
+													{ PWM_CH2_Pin, PWM_CH2_IRQ },
 #endif
 #if PWM_CH_NUM >= 3
-    { PWM_CH3_Pin, PWM_CH3_IRQ },
+													{ PWM_CH3_Pin, PWM_CH3_IRQ },
 #endif
 #if PWM_CH_NUM >= 4
-    { PWM_CH4_Pin, PWM_CH4_IRQ },
+													{ PWM_CH4_Pin, PWM_CH4_IRQ },
 #endif
 };
 
 static volatile uint32_t	rx[ PWM_CH_NUM ];
-
-uint32_t    ch[ PWM_CH_NUM ];
-bool    	chFault[ PWM_CH_NUM ];
-
+uint32_t    				ch[ PWM_CH_NUM ];
+bool    					chFault[ PWM_CH_NUM ];
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PUBLIC FUNCTIONS										*/
@@ -74,10 +65,8 @@ bool    	chFault[ PWM_CH_NUM ];
 
 
 /*
- * INITIALISES DATASTRUCTURES, STARTS TIMERS AND HANDLES CALIBRATION FOR THE PWM RADIO MODULE
- *
- * INPUTS: n/a
- * OUTPUTS: n/a
+ * PWM_Init
+ *  -
  */
 void PWM_Init ( void )
 {
@@ -93,9 +82,9 @@ void PWM_Init ( void )
 	TIM_Start( PWM_TIM );
 
 	// CONFIGURE EACH INPUT PIN AND ASSIGN IRQ
-	for ( uint8_t c = CH1; c < PWM_CH_NUM; c++ ) {
-		GPIO_EnableInput(	pwmChannels[c].pin, GPIO_Pull_Down);
-		GPIO_OnChange(		pwmChannels[c].pin, GPIO_IT_Both, pwmChannels[c].irqHandler );
+	for ( uint8_t c = 0; c < PWM_CH_NUM; c++ ) {
+		GPIO_EnableInput( pwmCh[c].pin, GPIO_Pull_Down);
+		GPIO_OnChange( pwmCh[c].pin, GPIO_IT_Both, pwmCh[c].irqHandler );
 	}
 
 	// RUN A PWM DATA UPDATE BEFORE PROGRESSING
@@ -104,10 +93,8 @@ void PWM_Init ( void )
 
 
 /*
- * DEINITIALISE IRQ'S AND STOPS TIMERS RELATED TO FUNCTION OF THE PWM RADIO MODULE
- *
- * INPUTS: n/a
- * OUTPUTS: n/a
+ * PWM_Deinit
+ *  -
  */
 void PWM_Deinit ( void )
 {
@@ -115,22 +102,16 @@ void PWM_Deinit ( void )
 	TIM_Deinit(PWM_TIM);
 
 	// DEINITIALISE AND UNASIGN IRQ FOR EACH RADIO INPUT PIN
-	for ( uint8_t c = CH1; c < PWM_CH_NUM; c++ ) {
-		GPIO_OnChange(	pwmChannels[c].pin, GPIO_IT_None, NULL );
-		GPIO_Deinit(	pwmChannels[c].pin );
+	for ( uint8_t c = 0; c < PWM_CH_NUM; c++ ) {
+		GPIO_OnChange( pwmCh[c].pin, GPIO_IT_None, NULL );
+		GPIO_Deinit( pwmCh[c].pin );
 	}
 }
 
 
 /*
- * HANDLES DETECTION OF VALID PWM SIGNALS
- *
- * THIS MODULE WILL INITIALISE WHAT IT NEEDS TO FOR CORRECT FUNCTIONALITY
- * IF DETECTION IS UNSICCESSFUL IT WILL DEINITIALISE ITSELF
- * IF DETECTIONS IS SUCCESSFUL IT WILL REMAIN ENABLED
- *
- * INPUTS: n/a
- * OUTPUTS: true = protocol detected, false = protocol not detected
+ * PWM_Detect
+ *  -
  */
 bool PWM_Detect ( void )
 {
@@ -146,7 +127,7 @@ bool PWM_Detect ( void )
 
 		//
 		bool noFaults = true;
-		for ( uint8_t c = CH1; c < PWM_CH_NUM; c++ ) {
+		for ( uint8_t c = 0; c < PWM_CH_NUM; c++ ) {
 			if ( chFault[c] ) {
 				noFaults = false;
 				break;
@@ -168,12 +149,8 @@ bool PWM_Detect ( void )
 
 
 /*
- * HANDLES EVERYTHING WITH ONGOING OPERATION OF PWM RADIO FUNCTIONALITY
- *
- * SHOULD BE CALLED EVERY LOOP (EVERY ~1ms)
- *
- * INPUTS: n/a
- * OUTPUTS: n/a
+ * PWM_Update
+ *  -
  */
 void PWM_Update ( void )
 {
@@ -183,7 +160,7 @@ void PWM_Update ( void )
 	uint32_t 		now 					= CORE_GetTick();
 
 	// ITTERATE THROUGH EACH CHANNEL
-	for ( uint8_t c = CH1; c < PWM_CH_NUM; c++ )
+	for ( uint8_t c = 0; c < PWM_CH_NUM; c++ )
 	{
 		// STATE - TIMEDOUT (OR STARTUP)
 		if ( chFault[c] )
@@ -234,24 +211,20 @@ void PWM_Update ( void )
 
 
 /*
- * RETRIEVED A POINTER TO THE DATA STRUCTURE CONTAINING ALL PWM MODULE DATA
- *
- * INPUTS: n/a
- * OUTPUTS: Pointer of type RADIO_data
+ * PWM_getDataPtr
+ *  -
  */
-uint32_t* PWM_getPtrData ( void )
+uint32_t* PWM_getDataPtr ( void )
 {
 	return ch;
 }
 
 
 /*
- * RETRIEVED A POINTER TO
- *
- * INPUTS: n/a
- * OUTPUTS: Pointer of type RADIO_data
+ * PWM_getInputLostPtr
+ *  -
  */
-bool* PWM_getPtrFault ( void )
+bool* PWM_getInputLostPtr ( void )
 {
 	return chFault;
 }
@@ -263,12 +236,10 @@ bool* PWM_getPtrFault ( void )
 
 
 /*
- * EXTRACTS RADIO DATA FROM TEMP ARRAY, PROCESSES IT AND MOVES IT TO THE OUTBOUND DATA ARRAY
- *
- * INPUTS: channel index to process of type RADIO_chIndex
- * OUTPUTS: n/a
+ * PWM_Process
+ *  -
  */
-static void PWM_Process ( RADIO_chIndex c )
+static void PWM_Process ( RADIO_chIndex_t c )
 {
 	// EXTRACT DATA AND RESET TEMP ARRAY
 	uint32_t pulse = rx[c];
@@ -298,12 +269,16 @@ static void PWM_Process ( RADIO_chIndex c )
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 
-static void PWM_IRQ ( RADIO_chIndex c )
+/*
+ * PWM_IRQ
+ *  -
+ */
+static void PWM_IRQ ( RADIO_chIndex_t c )
 {
 	// INITIALISE LOOP VARIABLES
-	uint32_t 		now 					= TIM_Read(PWM_TIM);
-	bool 			pos 					= GPIO_Read(pwmChannels[c].pin);
-	static bool 	pos_p[PWM_CH_NUM]		= {false};
+	uint32_t 		now 					= TIM_Read(  PWM_TIM);
+	bool 			pos 					= GPIO_Read( pwmCh[c].pin );
+	static bool 	pos_p[PWM_CH_NUM]		= { false };
 	static uint32_t	tickHigh[PWM_CH_NUM] 	= {0};
 	static uint32_t	tickLow[PWM_CH_NUM] 	= {0};
 

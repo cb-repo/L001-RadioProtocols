@@ -15,22 +15,23 @@
 
 /* “v‑table” of the five functions every protocol must provide */
 typedef struct {
-    void   		( *init )		( void );
-    void   		( *deinit )		( void );
-    bool   		( *detect )		( void );
-    void   		( *update )		( void );
-    uint32_t*	( *getData )	( void );
-    bool*		( *getFault )	( void );
-    uint8_t		chCount;
+	RADIO_protocol_t protocol;
+    void   			( *init )( void );
+    void   			( *deinit )( void );
+    bool   			( *detect )( void );
+    void   			( *update )( void );
+    uint32_t*		( *getData )( void );
+    bool*			( *getInputLost )( void );
+    uint8_t			chCount;
 } RADIO_ops;
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PRIVATE PROTOTYPES									*/
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-static void	RADIO_setProtocol 		( RADIO_protocol );
-static bool	RADIO_tryProtocol 		( RADIO_protocol );
-static void RADIO_updateChActive	( void );
+static void		RADIO_setProtocol 			( RADIO_protocol_t );
+static void 	RADIO_updateChActive		( void );
+static uint8_t	RADIO_updateValidChCount 	( void );
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PRIVATE VARIABLES									*/
@@ -39,8 +40,8 @@ static void RADIO_updateChActive	( void );
 static bool 			initialised = false;
 
 static RADIO_ops    	ops;
-static RADIO_protocol	protocol;
-static RADIO_chActive	activeFlags[ RADIO_CH_NUM_MAX ];
+static RADIO_chActive_t	chActiveCount[ RADIO_CH_NUM_MAX ];
+static uint8_t 			chValidCount;
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PUBLIC FUNCTIONS										*/
@@ -54,31 +55,27 @@ static RADIO_chActive	activeFlags[ RADIO_CH_NUM_MAX ];
  *  - If still none succeed, falls back to 'initial'.
  *  - Returns the protocol actually in use.
  */
-RADIO_protocol RADIO_Init ( RADIO_protocol initial )
+RADIO_protocol_t RADIO_Init ( RADIO_protocol_t initial )
 {
-	//
 	initialised = true;
 
-	// INITIALISE PROVIDED PROTOCOL
-	if ( RADIO_tryProtocol( initial ) ) 		{ return protocol; }
+	RADIO_setProtocol(initial);
+	if ( ops.detect ) { return initial; }
 
-	// TRY ALL PROTOCOLS IF FIRST ATTEMPT FAILS
-    for ( RADIO_protocol p = 0; p < RADIO_NUM_PROTOCOL; p++ ) {
-        if (p == initial) { continue; }
-        if ( RADIO_tryProtocol(p) ) {
-        	return protocol;
-        }
+    for ( RADIO_protocol_t p = 0; p < RADIO_NUM_PROTOCOL; p++ ) {
+        if ( p == initial ) { continue; }
+    	RADIO_setProtocol(p);
+        if ( ops.detect ) { return p; }
     }
-
-	// IF STILL NO DICE, FALL BACK TO INITAL
 
     RADIO_setProtocol(initial);
     ops.init();
-    return protocol;
+    return initial;
 }
 
 /*
- *
+ * RADIO_Deinit
+ *  -
  */
 void RADIO_Deinit ( void )
 {
@@ -88,33 +85,36 @@ void RADIO_Deinit ( void )
 
 /*
  * RADIO_Update
- *   - Poll this in your main loop (every ~1ms) to refresh channel data & fault flags.
+ *  - Poll this in your main loop (every ~1ms) to refresh channel data & fault flags.
  */
 void RADIO_Update ( void )
 {
     ops.update();
     RADIO_updateChActive();
+    RADIO_updateValidChCount();
 }
 
 /*
  * RADIO_getDataPtr
- *   - After RADIO_Update(), use this to read ch[], inputLost, etc.
+ *  - After RADIO_Update(), use this to read ch[], inputLost, etc.
  */
-uint32_t* RADIO_getPtrData ( void )
+uint32_t* RADIO_getData ( void )
 {
     return ops.getData();
 }
 
 /*
- *
+ * RADIO_getPtrFault
+ *  -
  */
-bool* RADIO_getPtrFault ( void )
+bool* RADIO_getInputLost ( void )
 {
-    return ops.getFault();
+    return ops.getInputLost();
 }
 
 /*
- *
+ * RADIO_getChCount
+ *  -
  */
 uint8_t RADIO_getChCount ( void )
 {
@@ -122,43 +122,42 @@ uint8_t RADIO_getChCount ( void )
 }
 
 /*
- *
+ * RADIO_getPtrChActive =
  */
-RADIO_chActive* RADIO_getPtrChActive ( void )
+RADIO_chActive_t* RADIO_getChActiveCount ( void )
 {
-    return activeFlags;
+    return chActiveCount;
 }
 
-///*
-// * RADIO_setChannelZeroPosition
-// *   - Once you have a steady input, call this to record current sticks as “zero.”
-// */
-//void RADIO_setChZeroPos ( void )
-//{
-//    if ( !data.anyFault )
-//    {
-//        for (uint8_t i = 0; i < data.ch_num; i++) {
-//            data.chZero[i] = data.ch[i];
-//        }
-//        data.chZeroSet = true;
-//    }
-//}
+/*
+ * RADIO_getValidChCount
+ *  -
+ */
+uint8_t RADIO_getChValidCount ( void )
+{
+    return chValidCount;
+}
 
 /*
  * RADIO_inFaultState
  *   - True if there’s currently no valid radio input.
  */
-bool RADIO_inFaultStateCH ( RADIO_chIndex c )
+bool RADIO_inFaultStateCH ( RADIO_chIndex_t c )
 {
 	if ( !initialised ) {
 		return true;
 	}
 
-	return ops.getFault()[c];
+	if ( ops.protocol == PWM ) {
+		return ops.getInputLost()[c];
+	} else {
+		return *ops.getInputLost();
+	}
 }
 
 /*
- *
+ * RADIO_inFaultStateALL
+ *  -
  */
 bool RADIO_inFaultStateALL ( void )
 {
@@ -166,18 +165,21 @@ bool RADIO_inFaultStateALL ( void )
 		return true;
 	}
 
-    for ( uint8_t i = 0; i < ops.chCount; i++ ) {
-    	bool fault = ops.getFault()[i];
-        if ( !fault ) {
-        	return false;
-        }
-    }
-
-    return true;
+	if ( ops.protocol == PWM ) {
+		for ( uint8_t i = 0; i < ops.chCount; i++ ) {
+			if ( !ops.getInputLost()[i] ) {
+				return false;
+			}
+		}
+		return true;
+	} else {
+		return *ops.getInputLost();
+	}
 }
 
 /*
- *
+ * RADIO_inFaultStateANY
+ *  -
  */
 bool RADIO_inFaultStateANY ( void )
 {
@@ -185,13 +187,16 @@ bool RADIO_inFaultStateANY ( void )
 		return true;
 	}
 
-    for ( uint8_t i = 0; i < ops.chCount; i++ ) {
-        if ( ops.getFault()[i] ) {
-        	return true;
-        }
-    }
-
-    return false;
+	if ( ops.protocol == PWM ) {
+		for ( uint8_t i = 0; i < ops.chCount; i++ ) {
+			if ( ops.getInputLost()[i] ) {
+				return true;
+			}
+		}
+		return false;
+	} else {
+		return *ops.getInputLost();
+	}
 }
 
 
@@ -204,111 +209,113 @@ bool RADIO_inFaultStateANY ( void )
  * RADIO_setProtocol
  *  - Fill in 'radio' ops & ch_num
  */
-static void RADIO_setProtocol ( RADIO_protocol p )
+static void RADIO_setProtocol ( RADIO_protocol_t p )
 {
-	//
-    protocol = p;
+	ops.protocol = p;
 
-    //
-    switch (p)
-    {
+    switch (p) {
 
-#if defined(RADIO_USE_PPM)
+#ifdef RADIO_USE_PPM
     case PPM:
-        ops.init     = PPM_Init;
-        ops.deinit   = PPM_Deinit;
-        ops.update   = PPM_Update;
-        ops.getData  = PPM_getPtrData;
-        ops.getFault = PPM_getPtrFault;    /* returns bool* to chFault[] */
-        ops.chCount  = PPM_CH_NUM;
+        ops.init	= PPM_Init;
+        ops.deinit	= PPM_Deinit;
+        ops.detect	= PPM_Detect;
+        ops.update	= PPM_Update;
+        ops.getData	= PPM_getDataPtr;
+        ops.getInputLost = PPM_getInputLostPtr;
+        ops.chCount	= PPM_CH_NUM;
         break;
 #endif
 
-#if defined(RADIO_USE_IBUS)
+#ifdef RADIO_USE_IBUS
     case IBUS:
-        ops.init     = IBUS_Init;
-        ops.deinit   = IBUS_Deinit;
-        ops.update   = IBUS_Update;
-        ops.getData  = IBUS_getPtrData;
-        ops.getFault = IBUS_getPtrFault;
-        ops.chCount  = IBUS_CH_NUM;
+        ops.init	= IBUS_Init;
+        ops.deinit	= IBUS_Deinit;
+        ops.detect	= IBUS_Detect;
+        ops.update	= IBUS_Update;
+        ops.getData	= IBUS_getDataPtr;
+        ops.getInputLost = IBUS_getInputLostPtr;
+        ops.chCount	= IBUS_CH_NUM;
         break;
 #endif
 
-#if defined(RADIO_USE_SBUS)
+#ifdef RADIO_USE_SBUS
     case SBUS:
-        ops.init     = SBUS_Init;
-        ops.deinit   = SBUS_Deinit;
-        ops.update   = SBUS_Update;
-        ops.getData  = SBUS_getPtrData;
-        ops.getFault = SBUS_getPtrFault;
-        ops.chCount  = SBUS_CH_NUM;
+        ops.init	= SBUS_Init;
+        ops.deinit	= SBUS_Deinit;
+        ops.detect	= SBUS_Detect;
+        ops.update	= SBUS_Update;
+        ops.getData	= SBUS_getDataPtr;
+        ops.getInputLost = SBUS_getInputLostPtr;
+        ops.chCount	= SBUS_CH_NUM;
         break;
 #endif
 
-#if defined(RADIO_USE_CRSF)
+#ifdef RADIO_USE_CRSF
     case CRSF:
-        ops.init     = CRSF_Init;
-        ops.deinit   = CRSF_Deinit;
-        ops.update   = CRSF_Update;
-        ops.getData  = CRSF_getPtrData;
-        ops.getFault = CRSF_getPtrFault;
-        ops.chCount  = CRSF_CH_NUM;
+        ops.init	= CRSF_Init;
+        ops.deinit	= CRSF_Deinit;
+        ops.detect	= CRSF_Detect;
+        ops.update	= CRSF_Update;
+        ops.getData	= CRSF_getDataPtr;
+        ops.getInputLost = CRSF_getInputLostPtr;
+        ops.chCount	= CRSF_CH_NUM;
         break;
 #endif
 
     case PWM:
     default:
-        ops.init     = PWM_Init;
-        ops.deinit   = PWM_Deinit;
-        ops.update   = PWM_Update;
-        ops.getData  = PWM_getPtrData;
-        ops.getFault = PWM_getPtrFault;
-        ops.chCount  = PWM_CH_NUM;
+        ops.init	= PWM_Init;
+        ops.deinit	= PWM_Deinit;
+        ops.detect	= PWM_Detect;
+        ops.update	= PWM_Update;
+        ops.getData	= PWM_getDataPtr;
+        ops.getInputLost = PWM_getInputLostPtr;
+        ops.chCount	= PWM_CH_NUM;
         break;
     }
 }
 
 /*
- * RADIO_tryProtocol
- *  - init, wait for signal, deinit if fail
- */
-static bool RADIO_tryProtocol(RADIO_protocol p)
-{
-    RADIO_setProtocol(p);
-    ops.init();
-
-    uint32_t start = CORE_GetTick();
-    while ((CORE_GetTick() - start) < RADIO_DETECT_TIMEOUT_MS) {
-        ops.update();
-        bool anyGood = false;
-        bool *faults = ops.getFault();
-        for (uint8_t i = 0; i < ops.chCount; i++) {
-            if (!faults[i]) { anyGood = true; break; }
-        }
-        if (anyGood) return true;
-    }
-    ops.deinit();
-    return false;
-}
-
-/*
- *
+ * RADIO_updateChActive
+ *  -
  */
 static void RADIO_updateChActive ( void )
 {
-    for (uint8_t i = 0; i < ops.chCount; i++)
-    {
-        if ( ops.getFault()[i] ) {
-            activeFlags[i] = chOFF;
+    for ( uint8_t i = 0; i < ops.chCount; i++ ) {
+        if ( ops.getInputLost()[i] ) {
+            chActiveCount[i] = chOFF;
         } else if ( ops.getData()[i] > RADIO_CH_CENTERMAX ) {
-            activeFlags[i] = chFWD;
+            chActiveCount[i] = chFWD;
         } else if ( ops.getData()[i] < RADIO_CH_CENTERMIN ) {
-            activeFlags[i] = chRVS;
+            chActiveCount[i] = chRVS;
         } else {
-            activeFlags[i] = chOFF;
+            chActiveCount[i] = chOFF;
         }
     }
+}
+
+/*
+ * RADIO_updateValidChCount
+ *  -
+ */
+static uint8_t RADIO_updateValidChCount ( void )
+{
+	if ( ops.protocol == PWM ) {
+		uint8_t count = 0;
+		for ( uint8_t ch = CH1 ; ch < ops.chCount; ch++ ) {
+			count += !ops.getInputLost()[ch];
+		}
+		return count;
+	}
+
+	else {
+		if ( !*ops.getInputLost() ) {
+			return ops.chCount;
+		} else {
+			return 0;
+		}
+	}
 }
 
 
@@ -321,4 +328,3 @@ static void RADIO_updateChActive ( void )
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
-
