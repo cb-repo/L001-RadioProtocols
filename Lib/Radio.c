@@ -7,13 +7,11 @@
 /* PRIVATE DEFINITIONS									*/
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-
 #define RADIO_DETECT_TIMEOUT_MS   	1000	/* How long (ms) to wait for frames when trying a protocol */
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PRIVATE TYPES										*/
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
-
 
 /* “v‑table” of the five functions every protocol must provide */
 typedef struct {
@@ -26,27 +24,23 @@ typedef struct {
     uint8_t		chCount;
 } RADIO_ops;
 
-
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PRIVATE PROTOTYPES									*/
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-
-static void	RADIO_setProtocol ( RADIO_protocol );
-static bool	RADIO_tryProtocol ( RADIO_protocol );
-
+static void	RADIO_setProtocol 		( RADIO_protocol );
+static bool	RADIO_tryProtocol 		( RADIO_protocol );
+static void RADIO_updateChActive	( void );
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PRIVATE VARIABLES									*/
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
-
 
 static bool 			initialised = false;
 
 static RADIO_ops    	ops;
 static RADIO_protocol	protocol;
 static RADIO_chActive	activeFlags[ RADIO_CH_NUM_MAX ];
-
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PUBLIC FUNCTIONS										*/
@@ -77,10 +71,20 @@ RADIO_protocol RADIO_Init ( RADIO_protocol initial )
     }
 
 	// IF STILL NO DICE, FALL BACK TO INITAL
-	RADIO_tryProtocol( initial );
+
+    RADIO_setProtocol(initial);
+    ops.init();
     return protocol;
 }
 
+/*
+ *
+ */
+void RADIO_Deinit ( void )
+{
+	initialised = false;
+    ops.deinit();
+}
 
 /*
  * RADIO_Update
@@ -89,8 +93,8 @@ RADIO_protocol RADIO_Init ( RADIO_protocol initial )
 void RADIO_Update ( void )
 {
     ops.update();
+    RADIO_updateChActive();
 }
-
 
 /*
  * RADIO_getDataPtr
@@ -101,15 +105,13 @@ uint32_t* RADIO_getPtrData ( void )
     return ops.getData();
 }
 
-
 /*
  *
  */
-uint32_t* RADIO_getPtrFault ( void )
+bool* RADIO_getPtrFault ( void )
 {
     return ops.getFault();
 }
-
 
 /*
  *
@@ -122,12 +124,10 @@ uint8_t RADIO_getChCount ( void )
 /*
  *
  */
-RADIO_chActive* RADIO_getActivePtr ( void )
+RADIO_chActive* RADIO_getPtrChActive ( void )
 {
     return activeFlags;
 }
-
-
 
 ///*
 // * RADIO_setChannelZeroPosition
@@ -144,7 +144,6 @@ RADIO_chActive* RADIO_getActivePtr ( void )
 //    }
 //}
 
-
 /*
  * RADIO_inFaultState
  *   - True if there’s currently no valid radio input.
@@ -158,7 +157,6 @@ bool RADIO_inFaultStateCH ( RADIO_chIndex c )
 	return ops.getFault()[c];
 }
 
-
 /*
  *
  */
@@ -169,14 +167,14 @@ bool RADIO_inFaultStateALL ( void )
 	}
 
     for ( uint8_t i = 0; i < ops.chCount; i++ ) {
-        if ( !ops.getFault()[i] ) {
+    	bool fault = ops.getFault()[i];
+        if ( !fault ) {
         	return false;
         }
     }
 
     return true;
 }
-
 
 /*
  *
@@ -271,7 +269,6 @@ static void RADIO_setProtocol ( RADIO_protocol p )
     }
 }
 
-
 /*
  * RADIO_tryProtocol
  *  - init, wait for signal, deinit if fail
@@ -295,22 +292,18 @@ static bool RADIO_tryProtocol(RADIO_protocol p)
     return false;
 }
 
-
 /*
  *
  */
-static void updateActiveFlags ( void )
+static void RADIO_updateChActive ( void )
 {
-    uint32_t *ch      = ops.getData();
-    bool     *faults  = ops.getFault();
-
     for (uint8_t i = 0; i < ops.chCount; i++)
     {
-        if ( faults[i] ) {
+        if ( ops.getFault()[i] ) {
             activeFlags[i] = chOFF;
-        } else if ( ch[i] > RADIO_CH_CENTERMAX ) {
+        } else if ( ops.getData()[i] > RADIO_CH_CENTERMAX ) {
             activeFlags[i] = chFWD;
-        } else if ( ch[i] < RADIO_CH_CENTERMIN ) {
+        } else if ( ops.getData()[i] < RADIO_CH_CENTERMIN ) {
             activeFlags[i] = chRVS;
         } else {
             activeFlags[i] = chOFF;

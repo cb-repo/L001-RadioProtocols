@@ -97,18 +97,6 @@ typedef enum {
 } RADIO_chActive;
 
 
-//typedef struct {
-//    bool            allFault;
-//    bool            anyFault;
-//    bool            chFault[RADIO_CH_NUM_MAX];
-//    uint32_t        ch[RADIO_CH_NUM_MAX];
-//    uint8_t         ch_num;     	/* how many channels this protocol provides */
-//    bool            chZeroSet;		/* have we recorded “trim” positions? */
-//    uint32_t        chZero[RADIO_CH_NUM_MAX];
-//    RADIO_chActive  chActive[RADIO_CH_NUM_MAX];
-//} RADIO_data;
-
-
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PUBLIC FUNCTIONS										*/
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
@@ -118,9 +106,9 @@ RADIO_protocol	RADIO_Init 				( RADIO_protocol );
 void 			RADIO_Update 			( void );
 
 uint32_t* 		RADIO_getPtrData 		( void );
-uint32_t* 		RADIO_getPtrFault 		( void );
+bool* 			RADIO_getPtrFault 		( void );
 uint8_t 		RADIO_getChCount		( void );
-RADIO_chActive* RADIO_getActivePtr 		( void );
+RADIO_chActive* RADIO_getPtrChActive 	( void );
 //void 			RADIO_setChZeroPos		( void );
 
 bool 			RADIO_inFaultStateCH   	( RADIO_chIndex );

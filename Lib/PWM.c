@@ -17,7 +17,7 @@
 
 
 typedef struct {
-    uint16_t pin;
+    uint32_t pin;
     void (*irqHandler)(void);
 } pwm_channel_t;
 
@@ -89,8 +89,8 @@ void PWM_Init ( void )
 	}
 
 	// START TIMER TO MEASURE PULSE WIDTHS
-	TIM_Init(  TIM_RADIO, TIM_RADIO_FREQ, TIM_RADIO_RELOAD );
-	TIM_Start( TIM_RADIO );
+	TIM_Init(  PWM_TIM, PWM_TIM_FREQ, PWM_TIM_RELOAD );
+	TIM_Start( PWM_TIM );
 
 	// CONFIGURE EACH INPUT PIN AND ASSIGN IRQ
 	for ( uint8_t c = CH1; c < PWM_CH_NUM; c++ ) {
@@ -112,7 +112,7 @@ void PWM_Init ( void )
 void PWM_Deinit ( void )
 {
 	// STOP AND DEINITIALISE THE RADIO TIMER
-	TIM_Deinit(TIM_RADIO);
+	TIM_Deinit(PWM_TIM);
 
 	// DEINITIALISE AND UNASIGN IRQ FOR EACH RADIO INPUT PIN
 	for ( uint8_t c = CH1; c < PWM_CH_NUM; c++ ) {
@@ -301,7 +301,7 @@ static void PWM_Process ( RADIO_chIndex c )
 static void PWM_IRQ ( RADIO_chIndex c )
 {
 	// INITIALISE LOOP VARIABLES
-	uint32_t 		now 					= TIM_Read(TIM_RADIO);
+	uint32_t 		now 					= TIM_Read(PWM_TIM);
 	bool 			pos 					= GPIO_Read(pwmChannels[c].pin);
 	static bool 	pos_p[PWM_CH_NUM]		= {false};
 	static uint32_t	tickHigh[PWM_CH_NUM] 	= {0};
