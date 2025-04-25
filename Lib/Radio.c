@@ -15,33 +15,26 @@
 
 /* “v‑table” of the five functions every protocol must provide */
 typedef struct {
-	RADIO_protocol_t protocol;
-    void   			( *init )( void );
-    void   			( *deinit )( void );
-    bool   			( *detect )( void );
-    void   			( *update )( void );
+	bool 				initialised;
+	RADIO_protocol_t 	protocol;
+    uint8_t				chCount;
+    RADIO_chActive_t	chActiveCount[RADIO_CH_NUM_MAX];
+    uint8_t 			chValidCount;
     uint32_t*		( *getData )( void );
     bool*			( *getInputLost )( void );
-    uint8_t			chCount;
 } RADIO_ops;
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PRIVATE PROTOTYPES									*/
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-static void		RADIO_setProtocol 			( RADIO_protocol_t );
-static void 	RADIO_updateChActive		( void );
-static uint8_t	RADIO_updateValidChCount 	( void );
+static inline bool RADIO_tryProtocol ( RADIO_protocol_t );
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PRIVATE VARIABLES									*/
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-static bool 			initialised = false;
-
-static RADIO_ops    	ops;
-static RADIO_chActive_t	chActiveCount[ RADIO_CH_NUM_MAX ];
-static uint8_t 			chValidCount;
+static RADIO_ops ops;
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PUBLIC FUNCTIONS										*/
@@ -57,19 +50,57 @@ static uint8_t 			chValidCount;
  */
 RADIO_protocol_t RADIO_Init ( RADIO_protocol_t initial )
 {
-	initialised = true;
+	ops.initialised = true;
 
-	RADIO_setProtocol(initial);
-	if ( ops.detect ) { return initial; }
+	if ( RADIO_tryProtocol(initial) ) { return initial; }
 
-    for ( RADIO_protocol_t p = 0; p < RADIO_NUM_PROTOCOL; p++ ) {
-        if ( p == initial ) { continue; }
-    	RADIO_setProtocol(p);
-        if ( ops.detect ) { return p; }
+	for ( RADIO_protocol_t p = 0; p < RADIO_NUM_PROTOCOL; p++ ) {
+		if ( p == initial ) { continue; }
+		if ( RADIO_tryProtocol(p) ) { return p; }
+	}
+
+	ops.protocol = initial;
+    switch (initial) {
+	#ifdef RADIO_USE_PPM
+    case PPM:
+		ops.chCount			= PPM_CH_NUM;
+    	ops.getData 		= PPM_getData;
+    	ops.getInputLost 	= PPM_getInputLost;
+    	PPM_Init();
+        break;
+	#endif
+	#ifdef RADIO_USE_IBUS
+    case IBUS;
+		ops.chCount			= IBUS_CH_NUM;
+    	ops.getData 		= IBUS_getData;
+    	ops.getInputLost 	= IBUS_getInputLost;
+    	IBUS_Init();
+        break;
+	#endif
+	#ifdef RADIO_USE_SBUS
+    case SBUS:
+		ops.chCount			= SBUS_CH_NUM;
+    	ops.getData 		= SBUS_getData;
+    	ops.getInputLost 	= SBUS_getInputLost;
+    	SBUS_Init();
+        break;
+	#endif
+	#ifdef RADIO_USE_CRSF
+    case CRSF:
+		ops.chCount			= CRSF_CH_NUM;
+    	ops.getData 		= CRSF_getData;
+    	ops.getInputLost 	= CRSF_getInputLost;
+    	CRSF_Init();
+        break;
+	#endif
+    case PWM:
+    default:
+		ops.chCount			= PWM_CH_NUM;
+    	ops.getData 		= PWM_getData;
+    	ops.getInputLost 	= PWM_getInputLost;
+    	PWM_Init();
+        break;
     }
-
-    RADIO_setProtocol(initial);
-    ops.init();
     return initial;
 }
 
@@ -79,8 +110,34 @@ RADIO_protocol_t RADIO_Init ( RADIO_protocol_t initial )
  */
 void RADIO_Deinit ( void )
 {
-	initialised = false;
-    ops.deinit();
+	ops.initialised = false;
+
+    switch (ops.protocol) {
+	#ifdef RADIO_USE_PPM
+    case PPM:
+    	PPM_Deinit();
+        break;
+	#endif
+	#ifdef RADIO_USE_IBUS
+    case IBUS;
+    	IBUS_Deinit();
+        break;
+	#endif
+	#ifdef RADIO_USE_SBUS
+    case SBUS:
+    	SBUS_Deinit();
+        break;
+	#endif
+	#ifdef RADIO_USE_CRSF
+    case CRSF:
+    	CRSF_Deinit();
+        break;
+	#endif
+    case PWM:
+    default:
+    	PWM_Deinit();
+        break;
+    }
 }
 
 /*
@@ -89,9 +146,60 @@ void RADIO_Deinit ( void )
  */
 void RADIO_Update ( void )
 {
-    ops.update();
-    RADIO_updateChActive();
-    RADIO_updateValidChCount();
+    switch (ops.protocol) {
+	#ifdef RADIO_USE_PPM
+    case PPM:
+    	PPM_Update();
+        break;
+	#endif
+	#ifdef RADIO_USE_IBUS
+    case IBUS;
+    	IBUS_Update();
+        break;
+	#endif
+	#ifdef RADIO_USE_SBUS
+    case SBUS:
+    	SBUS_Update();
+        break;
+	#endif
+	#ifdef RADIO_USE_CRSF
+    case CRSF:
+    	CRSF_Update();
+        break;
+	#endif
+    case PWM:
+    default:
+    	PWM_Update();
+        break;
+    }
+
+    // Update Active Channel Count
+    for ( uint8_t i = 0; i < ops.chCount; i++ ) {
+        if ( ops.getInputLost()[i] ) {
+            ops.chActiveCount[i] = chOFF;
+        } else if ( ops.getData()[i] > RADIO_CH_CENTERMAX ) {
+            ops.chActiveCount[i] = chFWD;
+        } else if ( ops.getData()[i] < RADIO_CH_CENTERMIN ) {
+            ops.chActiveCount[i] = chRVS;
+        } else {
+            ops.chActiveCount[i] = chOFF;
+        }
+    }
+
+    // Update Valid Channel Count
+	if ( ops.protocol == PWM ) {
+		uint8_t count = 0;
+		for ( uint8_t ch = CH1 ; ch < ops.chCount; ch++ ) {
+			count += !ops.getInputLost()[ch];
+		}
+		ops.chValidCount = count;
+	} else {
+		if ( ops.getInputLost() ) {
+			ops.chValidCount = ops.chCount;
+		} else {
+			ops.chValidCount = 0;
+		}
+	}
 }
 
 /*
@@ -100,16 +208,27 @@ void RADIO_Update ( void )
  */
 uint32_t* RADIO_getData ( void )
 {
-    return ops.getData();
-}
-
-/*
- * RADIO_getPtrFault
- *  -
- */
-bool* RADIO_getInputLost ( void )
-{
-    return ops.getInputLost();
+    switch (ops.protocol) {
+	#ifdef RADIO_USE_PPM
+    case PPM:
+    	return PPM_getData();
+	#endif
+	#ifdef RADIO_USE_IBUS
+    case IBUS;
+    	return IBUS_getData();
+	#endif
+	#ifdef RADIO_USE_SBUS
+    case SBUS:
+    	return SBUS_getData();
+	#endif
+	#ifdef RADIO_USE_CRSF
+    case CRSF:
+    	return CRSF_getData();
+	#endif
+    case PWM:
+    default:
+    	return PWM_getData();
+    }
 }
 
 /*
@@ -126,7 +245,7 @@ uint8_t RADIO_getChCount ( void )
  */
 RADIO_chActive_t* RADIO_getChActiveCount ( void )
 {
-    return chActiveCount;
+    return ops.chActiveCount;
 }
 
 /*
@@ -135,7 +254,7 @@ RADIO_chActive_t* RADIO_getChActiveCount ( void )
  */
 uint8_t RADIO_getChValidCount ( void )
 {
-    return chValidCount;
+    return ops.chValidCount;
 }
 
 /*
@@ -144,7 +263,7 @@ uint8_t RADIO_getChValidCount ( void )
  */
 bool RADIO_inFaultStateCH ( RADIO_chIndex_t c )
 {
-	if ( !initialised ) {
+	if ( !ops.initialised ) {
 		return true;
 	}
 
@@ -161,7 +280,7 @@ bool RADIO_inFaultStateCH ( RADIO_chIndex_t c )
  */
 bool RADIO_inFaultStateALL ( void )
 {
-	if ( !initialised ) {
+	if ( !ops.initialised ) {
 		return true;
 	}
 
@@ -183,7 +302,7 @@ bool RADIO_inFaultStateALL ( void )
  */
 bool RADIO_inFaultStateANY ( void )
 {
-	if ( !initialised ) {
+	if ( !ops.initialised ) {
 		return true;
 	}
 
@@ -205,119 +324,47 @@ bool RADIO_inFaultStateANY ( void )
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 
-/*
- * RADIO_setProtocol
- *  - Fill in 'radio' ops & ch_num
- */
-static void RADIO_setProtocol ( RADIO_protocol_t p )
+static inline bool RADIO_tryProtocol ( RADIO_protocol_t p )
 {
 	ops.protocol = p;
 
-    switch (p) {
-
-#ifdef RADIO_USE_PPM
-    case PPM:
-        ops.init	= PPM_Init;
-        ops.deinit	= PPM_Deinit;
-        ops.detect	= PPM_Detect;
-        ops.update	= PPM_Update;
-        ops.getData	= PPM_getDataPtr;
-        ops.getInputLost = PPM_getInputLostPtr;
-        ops.chCount	= PPM_CH_NUM;
-        break;
-#endif
-
-#ifdef RADIO_USE_IBUS
-    case IBUS:
-        ops.init	= IBUS_Init;
-        ops.deinit	= IBUS_Deinit;
-        ops.detect	= IBUS_Detect;
-        ops.update	= IBUS_Update;
-        ops.getData	= IBUS_getDataPtr;
-        ops.getInputLost = IBUS_getInputLostPtr;
-        ops.chCount	= IBUS_CH_NUM;
-        break;
-#endif
-
-#ifdef RADIO_USE_SBUS
-    case SBUS:
-        ops.init	= SBUS_Init;
-        ops.deinit	= SBUS_Deinit;
-        ops.detect	= SBUS_Detect;
-        ops.update	= SBUS_Update;
-        ops.getData	= SBUS_getDataPtr;
-        ops.getInputLost = SBUS_getInputLostPtr;
-        ops.chCount	= SBUS_CH_NUM;
-        break;
-#endif
-
-#ifdef RADIO_USE_CRSF
-    case CRSF:
-        ops.init	= CRSF_Init;
-        ops.deinit	= CRSF_Deinit;
-        ops.detect	= CRSF_Detect;
-        ops.update	= CRSF_Update;
-        ops.getData	= CRSF_getDataPtr;
-        ops.getInputLost = CRSF_getInputLostPtr;
-        ops.chCount	= CRSF_CH_NUM;
-        break;
-#endif
-
-    case PWM:
-    default:
-        ops.init	= PWM_Init;
-        ops.deinit	= PWM_Deinit;
-        ops.detect	= PWM_Detect;
-        ops.update	= PWM_Update;
-        ops.getData	= PWM_getDataPtr;
-        ops.getInputLost = PWM_getInputLostPtr;
-        ops.chCount	= PWM_CH_NUM;
-        break;
-    }
-}
-
-/*
- * RADIO_updateChActive
- *  -
- */
-static void RADIO_updateChActive ( void )
-{
-    for ( uint8_t i = 0; i < ops.chCount; i++ ) {
-        if ( ops.getInputLost()[i] ) {
-            chActiveCount[i] = chOFF;
-        } else if ( ops.getData()[i] > RADIO_CH_CENTERMAX ) {
-            chActiveCount[i] = chFWD;
-        } else if ( ops.getData()[i] < RADIO_CH_CENTERMIN ) {
-            chActiveCount[i] = chRVS;
-        } else {
-            chActiveCount[i] = chOFF;
-        }
-    }
-}
-
-/*
- * RADIO_updateValidChCount
- *  -
- */
-static uint8_t RADIO_updateValidChCount ( void )
-{
-	if ( ops.protocol == PWM ) {
-		uint8_t count = 0;
-		for ( uint8_t ch = CH1 ; ch < ops.chCount; ch++ ) {
-			count += !ops.getInputLost()[ch];
-		}
-		return count;
-	}
-
-	else {
-		if ( !*ops.getInputLost() ) {
-			return ops.chCount;
-		} else {
-			return 0;
-		}
+	switch (p) {
+	#ifdef RADIO_USE_PPM
+	case PPM:
+		ops.chCount			= PPM_CH_NUM;
+    	ops.getData 		= PPM_getData;
+    	ops.getInputLost	= PPM_getInputLost;
+		return PPM_Detect();
+	#endif
+	#ifdef RADIO_USE_IBUS
+	case IBUS;
+		ops.chCount			= IBUS_CH_NUM;
+    	ops.getData 		= IBUS_getData;
+    	ops.getInputLost 	= IBUS_getInputLost;
+		return IBUS_Detect();
+	#endif
+	#ifdef RADIO_USE_SBUS
+	case SBUS:
+		ops.chCount			= SBUS_CH_NUM;
+    	ops.getData 		= SBUS_getData;
+    	ops.getInputLost 	= SBUS_getInputLost;
+		return SBUS_Detect();
+	#endif
+	#ifdef RADIO_USE_CRSF
+	case CRSF:
+		ops.chCount			= CRSF_CH_NUM;
+    	ops.getData 		= CRSF_getData;
+    	ops.getInputLost 	= CRSF_getInputLost;
+		return CRSF_Detect();
+	#endif
+	case PWM:
+	default:
+		ops.chCount			= PWM_CH_NUM;
+    	ops.getData 		= PWM_getData;
+    	ops.getInputLost 	= PWM_getInputLost;
+		return PWM_Detect();
 	}
 }
-
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* EVENT HANDLERS										*/

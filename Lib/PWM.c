@@ -211,20 +211,20 @@ void PWM_Update ( void )
 
 
 /*
- * PWM_getDataPtr
+ * PWM_getData
  *  -
  */
-uint32_t* PWM_getDataPtr ( void )
+uint32_t* PWM_getData ( void )
 {
 	return ch;
 }
 
 
 /*
- * PWM_getInputLostPtr
+ * PWM_getInputLost
  *  -
  */
-bool* PWM_getInputLostPtr ( void )
+bool* PWM_getInputLost ( void )
 {
 	return chFault;
 }

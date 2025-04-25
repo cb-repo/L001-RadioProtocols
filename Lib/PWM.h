@@ -56,8 +56,8 @@ void 		PWM_Deinit			( void );
 bool 		PWM_Detect			( void );
 void 		PWM_Update			( void );
 
-uint32_t*	PWM_getDataPtr 		( void );
-bool* 		PWM_getInputLostPtr	( void );
+uint32_t*	PWM_getData 		( void );
+bool* 		PWM_getInputLost	( void );
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* EXTERN DECLARATIONS									*/
