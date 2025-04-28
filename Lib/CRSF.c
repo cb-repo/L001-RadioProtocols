@@ -31,6 +31,7 @@
 
 #define CRSF_LEN_SYNC           1
 #define CRSF_LEN_LENGTH         1
+#define CRSF_LEN_TYPE       	1
 #define CRSF_LEN_CRC8       	1
 #define CRSF_LEN_PACKET_MIN     3
 #define CRSF_LEN_PACKET_MAX     64
@@ -48,9 +49,7 @@
 #define CRSF_MAX_2000           1792
 #define CRSF_MAX                1811
 #define CRSF_THRESHOLD          10
-#define CRSF_MAP_RANGE          1000
 #define CRSF_RANGE              (CRSF_MAX - CRSF_MIN)
-#define CRSF_MAP_MIN            0
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PRIVATE TYPES                                        */
@@ -60,27 +59,28 @@
 /* PRIVATE PROTOTYPES                                   */
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-static bool 	CRSF_DecodePayload	( void );
-static uint8_t 	CRSF_CalcCRC8		( const uint8_t *, uint8_t );
-static uint32_t	CRSF_Transform		( uint16_t );
+static bool 		CRSF_Decode					( void );
+static inline void	CRSF_DecodeFrame_ChannelsRC	( void );
+static uint8_t 		CRSF_CalcCRC8				( const uint8_t *, uint8_t );
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PRIVATE VARIABLES                                 */
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-static uint8_t  rx[CRSF_LEN_PACKET_MAX]		= {0};
 static uint32_t idx							= CRSF_INDEX_SYNC;
 static uint32_t	packetStart					= 0;
 static uint32_t	lastValidPacket 			= 0;
 static uint8_t 	payloadLen 					= 0;
 
+static uint8_t  rx[CRSF_LEN_PACKET_MAX]		= {0};
 static uint32_t	data[CRSF_CH_NUM]			= {0};
+static uint32_t	raw[CRSF_CH_NUM]			= {0};
+
 static bool 	inputLost 					= true;
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PUBLIC FUNCTIONS                                  */
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
-
 
 /*
  * CRSF_Init
@@ -96,7 +96,6 @@ void CRSF_Init ( void )
 
     memset( data, 0, sizeof(data) );
     inputLost = true;
-
 
     UART_Init(		CRSF_UART, CRSF_BAUD, UART_Mode_Default );
     UART_ReadFlush( CRSF_UART );
@@ -177,9 +176,10 @@ void CRSF_Update ( void )
         		uint8_t crc = CRSF_CalcCRC8( &rx[CRSF_INDEX_PAYLOAD], rx[CRSF_INDEX_LENGTH]-1 );
         		// Calculate checksum to verify Payload
          		if ( crc  == rx[payloadLen-1] ) {
-         			if ( CRSF_DecodePayload() ) {
+         			if ( CRSF_Decode() ) {
             			inputLost = false;
             			lastValidPacket = CORE_GetTick();
+            		    memset( rx, 0, sizeof(rx) );
          			}
         		}
         		idx = CRSF_INDEX_SYNC;
@@ -225,64 +225,63 @@ bool* CRSF_getInputLostPtr ( void )
 /* PRIVATE FUNCTIONS                                 */
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-static bool CRSF_DecodePayload( void )
+static bool CRSF_Decode ( void )
 {
 	switch ( rx[CRSF_INDEX_PAYLOAD] ) {
 
-	case CRSF_FRAMETYPE_RC_CHANNELS_PACKED:
-		// decode 16×11-bit channels from payload
-		for ( int i = 0; i < CRSF_CH_NUM; i++ ) {
-			uint32_t bitIndex = i * 11;
-			uint32_t byteIndex = CRSF_INDEX_PAYLOAD + (bitIndex >> 3); // divide by 8 and offset
-			uint32_t bitOffset = byteIndex & 7; // mod 8
-			// Extract the 16 channels
-			uint32_t raw = ( rx[byteIndex] >> bitOffset ) | ( rx[byteIndex + 1] << (8 - bitOffset) );
-	        // If our 11-bit slice spans three bytes, grab the third byte too
-			if ( bitOffset > 5 ) {
-				raw |= (uint32_t)rx[byteIndex + 2] << (16 - bitOffset) ;
-			}
-			// Mask to 11 bits, transform, and store
-			data[i] = CRSF_Transform(raw & 0x07FF);
-		}
+	case CRSF_FRAMETYPE_RC_CHANNELS:
+		CRSF_DecodeFrame_ChannelsRC();
 		break;
 
 	case CRSF_FRAMETYPE_GPS:
 		break;
-	case CRSF_FRAMETYPE_GPS_TIME:
-		break;
-	case CRSF_FRAMETYPE_GPS_EXT:
-		break;
+//	case CRSF_FRAMETYPE_GPS_TIME:
+//		break;
+//	case CRSF_FRAMETYPE_GPS_EXT:
+//		break;
 	case CRSF_FRAMETYPE_VARIO:
 		break;
 	case CRSF_FRAMETYPE_BATTERY_SENSOR:
 		break;
 	case CRSF_FRAMETYPE_BARO_ALTITUDE:
 		break;
-	case CRSF_FRAMETYPE_AIRSPEED:
+	case CRSF_FRAMETYPE_OPENTX_SYNC:
 		break;
-	case CRSF_FRAMETYPE_HEARTBEAT:
-		break;
-	case CRSF_FRAMETYPE_RPM:
-		break;
-	case CRSF_FRAMETYPE_TEMP:
-		break;
-	case CRSF_FRAMETYPE_VTX_TELEMETRY:
-		break;
+//	case CRSF_FRAMETYPE_AIRSPEED:
+//		break;
+//	case CRSF_FRAMETYPE_HEARTBEAT:
+//		break;
+//	case CRSF_FRAMETYPE_RPM:
+//		break;
+//	case CRSF_FRAMETYPE_TEMP:
+//		break;
+//	case CRSF_FRAMETYPE_VTX_TELEMETRY:
+//		break;
 	case CRSF_FRAMETYPE_LINK_STATISTICS:
 		break;
-	case CRSF_FRAMETYPE_SUBSET_RC_CHANNELS_PACKED:
-		break;
-	case CRSF_FRAMETYPE_LINK_RX_ID:
-		break;
-	case CRSF_FRAMETYPE_LINK_TX_ID:
-		break;
+//	case CRSF_FRAMETYPE_SUBSET_RC_CHANNELS_PACKED:
+//		break;
+//	case CRSF_FRAMETYPE_LINK_RX_ID:
+//		break;
+//	case CRSF_FRAMETYPE_LINK_TX_ID:
+//		break;
 	case CRSF_FRAMETYPE_ATTITUDE:
 		break;
-	case CRSF_FRAMETYPE_MAVLINK_FC:
-		break;
+//	case CRSF_FRAMETYPE_MAVLINK_FC:
+//		break;
 	case CRSF_FRAMETYPE_FLIGHT_MODE:
 		break;
-	case CRSF_FRAMETYPE_ESP_NOW_MSG:
+//	case CRSF_FRAMETYPE_ESP_NOW_MSG:
+//		break;
+	case CRSF_FRAMETYPE_PING_DEVICES:
+		break;
+	case CRSF_FRAMETYPE_DEVICE_INFO:
+		break;
+	case CRSF_FRAMETYPE_REQUEST_SETTINGS:
+		break;
+	case CRSF_FRAMETYPE_COMMAND:
+		break;
+	case CRSF_FRAMETYPE_RADIO:
 		break;
 
 	default:
@@ -292,27 +291,41 @@ static bool CRSF_DecodePayload( void )
 	return true;
 }
 
-
 /*
- * CRSF_Transform
- *  -
+ *
  */
-static uint32_t CRSF_Transform ( uint16_t raw )
+static inline void CRSF_DecodeFrame_ChannelsRC ( void )
 {
-    uint32_t pulse;
-
-    if 		( raw < (CRSF_MIN - CRSF_THRESHOLD) )	{ pulse = 0; }
-    else if ( raw <  CRSF_MIN_1000)                 { pulse = CRSF_MIN; }
-    else if ( raw <= CRSF_MAX_2000)              	{ pulse = raw; }
-    else if ( raw < (CRSF_MAX + CRSF_THRESHOLD) )	{ pulse = CRSF_MAX; }
-    else                                        	{ pulse = 0; }
-
-    if ( pulse ) {
-    	pulse  = pulse * CRSF_MAP_RANGE / CRSF_RANGE;
-    	pulse += CRSF_MAP_MIN;
-    	pulse -= (CRSF_MIN * CRSF_MAP_RANGE / CRSF_RANGE);
-    }
-    return pulse;
+	// decode 16×11-bit channels from payload
+	for ( int i = 0; i < CRSF_CH_NUM; i++ ) {
+		uint32_t bitIndex = i * 11;
+		uint32_t byteIndex = (CRSF_INDEX_PAYLOAD + CRSF_LEN_TYPE) + (bitIndex >> 3); // divide by 8 and offset
+		uint32_t bitOffset = bitIndex & 7; // mod 8
+		// Extract the 16 channels
+		raw[i] = ( (rx[byteIndex] >> bitOffset) | (rx[byteIndex + 1] << (8 - bitOffset)) );
+		// If our 11-bit slice spans three bytes, grab the third byte too
+		if ( bitOffset > 5 ) {
+			raw[i] |= (uint32_t)rx[byteIndex + 2] << (16 - bitOffset) ;
+		}
+		// Mask to 11 bits, transform, and store
+		raw[i] &= 0x07FF;
+		uint32_t convert = raw[i];
+		// Bound data
+	    if 		( convert < (CRSF_MIN - CRSF_THRESHOLD) )	{ convert = 0; }
+	    else if ( convert <  CRSF_MIN_1000)                 { convert = CRSF_MIN_1000; }
+	    else if ( convert <= CRSF_MAX_2000)              	{ /* do nothing*/ }
+	    else if ( convert <= (CRSF_MAX + CRSF_THRESHOLD) )	{ convert = CRSF_MAX_2000; }
+	    else                                       			{ convert = 0; }
+		// transform
+		if ( convert ) {
+			convert -= CRSF_MIN_1000;
+			convert *= RADIO_CH_FULLSCALE;
+			convert /= (CRSF_MAX_2000 - CRSF_MIN_1000);
+			convert += RADIO_CH_MIN;
+		}
+	    // store
+		data[i] = convert;
+	}
 }
 
 
