@@ -4,12 +4,10 @@
 #define CRSF_H
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-
 #include "STM32X.h"
 
 #include "UART.h"
 #include "Core.h"
-#include "Radio.h"
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 /* PUBLIC DEFINITIONS									*/
@@ -23,6 +21,7 @@
 
 typedef enum
 {
+	CRSF_unknown = 0x00,
     CRSF_FRAMETYPE_GPS = 0x02,
 //    CRSF_FRAMETYPE_GPS_TIME = 0x03,
 //    CRSF_FRAMETYPE_GPS_EXT = 0x06,
@@ -55,12 +54,12 @@ typedef enum
 /* PUBLIC FUNCTIONS										*/
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-void 		CRSF_Init 				( void );
-void 		CRSF_Deinit 			( void );
-bool 		CRSF_Detect 			( void );
-void 		CRSF_Update 			( void );
+void 		CRSF_Init 			( void );
+void 		CRSF_Deinit 		( void );
+bool 		CRSF_Detect 		( void );
+void 		CRSF_Update 		( void );
 
-uint32_t*	CRSF_getData			( void );
+uint32_t*	CRSF_getData		( void );
 bool* 		CRSF_getInputLost	( void );
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */

@@ -26,8 +26,8 @@
 
 #define CRSF_BAUD				420000
 #define CRSF_PERIOD_MS			4
-#define CRSF_TIMEOUT_PACKET_MS  1
-#define CRSF_TIMEOUT_RADIO_MS	(CRSF_PERIOD_MS * 10)
+#define CRSF_TIMEOUT_PACKET_MS  2
+#define CRSF_TIMEOUT_RADIO_MS	100//(CRSF_PERIOD_MS * 10)
 
 #define CRSF_LEN_SYNC           1
 #define CRSF_LEN_LENGTH         1
@@ -59,8 +59,9 @@
 /* PRIVATE PROTOTYPES                                   */
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-static bool 		CRSF_Decode					( void );
+static CRSF_frameType_e CRSF_Decode					( void );
 static inline void	CRSF_DecodeFrame_ChannelsRC	( void );
+static inline void 	CRSF_DecodeFrame_LinkStats 	( void );
 static uint8_t 		CRSF_CalcCRC8				( const uint8_t *, uint8_t );
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
@@ -125,10 +126,11 @@ bool CRSF_Detect ( void )
         CORE_Idle();
     }
 
-    if ( inputLost )
+    if ( inputLost ) {
         CRSF_Deinit();
+    }
 
-    return inputLost;
+    return !inputLost;
 }
 
 /*
@@ -137,6 +139,12 @@ bool CRSF_Detect ( void )
  */
 void CRSF_Update ( void )
 {
+	static uint32_t countGood =0;
+	static uint32_t countBad =0;
+	static uint32_t countBadCRC =0;
+	static uint32_t countBadIL =0;
+	static uint32_t countValidPacket =0;
+	static uint32_t countotherPAcket =0;
     uint8_t byte;
 
     while ( UART_ReadCount(CRSF_UART) )
@@ -147,6 +155,7 @@ void CRSF_Update ( void )
         if ( idx == CRSF_INDEX_SYNC ) { // want this check after length check so can cascade into it on a failed length check
 			// Confirm data is CRSF sync byte
 			if ( byte == CRSF_SYNC ) {
+    		    memset( rx, 0, sizeof(rx) );
 				rx[CRSF_INDEX_SYNC]	= byte;
 				idx = CRSF_INDEX_LENGTH;
 				packetStart = CORE_GetTick();
@@ -160,9 +169,11 @@ void CRSF_Update ( void )
             	rx[CRSF_INDEX_LENGTH] = byte;
             	payloadLen = CRSF_LEN_SYNC + CRSF_LEN_LENGTH + rx[CRSF_INDEX_LENGTH];
             	idx = CRSF_INDEX_PAYLOAD;
+            	countGood++;
             // Failed check
         	} else {
         		idx = CRSF_INDEX_SYNC;
+        		countBad++;
         	}
         }
 
@@ -176,12 +187,19 @@ void CRSF_Update ( void )
         		uint8_t crc = CRSF_CalcCRC8( &rx[CRSF_INDEX_PAYLOAD], rx[CRSF_INDEX_LENGTH]-1 );
         		// Calculate checksum to verify Payload
          		if ( crc  == rx[payloadLen-1] ) {
-         			if ( CRSF_Decode() ) {
+         			CRSF_frameType_e packet = CRSF_Decode();
+         			if ( packet == CRSF_FRAMETYPE_RC_CHANNELS ) {
             			inputLost = false;
             			lastValidPacket = CORE_GetTick();
-            		    memset( rx, 0, sizeof(rx) );
+            			countValidPacket++;
+//            		    memset( rx, 0, sizeof(rx) );
+         			} else {
+         				countotherPAcket++;
          			}
         		}
+         		else {
+         			countBadCRC ++;
+         		}
         		idx = CRSF_INDEX_SYNC;
         	}
         	else { idx++; }
@@ -191,6 +209,16 @@ void CRSF_Update ( void )
 
 	uint32_t now = CORE_GetTick();
 
+	if ( countGood >1000 ||
+	 countBad >1000 ||
+	 countBadCRC >1000 ||
+	 countBadIL >1000 ||
+	 countValidPacket >1000 ||
+	 countotherPAcket >1000 )
+	{
+//		inputLost = true;
+	}
+
 	// TIMEOUT MID PAYLOAD - ABORT TRANSMISSION
 	if ( idx != CRSF_INDEX_SYNC && (now - packetStart) >= CRSF_TIMEOUT_PACKET_MS ) {
 		idx = CRSF_INDEX_SYNC;
@@ -198,6 +226,7 @@ void CRSF_Update ( void )
 	// TIMEOUT WITH RADIO
 	if ( !inputLost && (now - lastValidPacket) >= CRSF_TIMEOUT_RADIO_MS ) {
 		inputLost = true;
+		countBadIL++;
 		idx = CRSF_INDEX_SYNC;
 	}
 }
@@ -206,7 +235,7 @@ void CRSF_Update ( void )
  * CRSF_getDataPtr
  *  -
  */
-uint32_t* CRSF_getDataPtr ( void )
+uint32_t* CRSF_getData ( void )
 {
     return data;
 }
@@ -215,7 +244,7 @@ uint32_t* CRSF_getDataPtr ( void )
  * CRSF_getInputLost
  *  -
  */
-bool* CRSF_getInputLostPtr ( void )
+bool* CRSF_getInputLost ( void )
 {
     return &inputLost;
 }
@@ -225,70 +254,71 @@ bool* CRSF_getInputLostPtr ( void )
 /* PRIVATE FUNCTIONS                                 */
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-static bool CRSF_Decode ( void )
+static CRSF_frameType_e CRSF_Decode ( void )
 {
 	switch ( rx[CRSF_INDEX_PAYLOAD] ) {
 
 	case CRSF_FRAMETYPE_RC_CHANNELS:
 		CRSF_DecodeFrame_ChannelsRC();
-		break;
+		return CRSF_FRAMETYPE_RC_CHANNELS;
+
+	case CRSF_FRAMETYPE_LINK_STATISTICS:
+		CRSF_DecodeFrame_LinkStats();
+		return CRSF_FRAMETYPE_LINK_STATISTICS;
 
 	case CRSF_FRAMETYPE_GPS:
-		break;
-//	case CRSF_FRAMETYPE_GPS_TIME:
-//		break;
-//	case CRSF_FRAMETYPE_GPS_EXT:
-//		break;
-	case CRSF_FRAMETYPE_VARIO:
-		break;
-	case CRSF_FRAMETYPE_BATTERY_SENSOR:
-		break;
-	case CRSF_FRAMETYPE_BARO_ALTITUDE:
-		break;
-	case CRSF_FRAMETYPE_OPENTX_SYNC:
-		break;
-//	case CRSF_FRAMETYPE_AIRSPEED:
-//		break;
-//	case CRSF_FRAMETYPE_HEARTBEAT:
-//		break;
-//	case CRSF_FRAMETYPE_RPM:
-//		break;
-//	case CRSF_FRAMETYPE_TEMP:
-//		break;
-//	case CRSF_FRAMETYPE_VTX_TELEMETRY:
-//		break;
-	case CRSF_FRAMETYPE_LINK_STATISTICS:
-		break;
-//	case CRSF_FRAMETYPE_SUBSET_RC_CHANNELS_PACKED:
-//		break;
-//	case CRSF_FRAMETYPE_LINK_RX_ID:
-//		break;
-//	case CRSF_FRAMETYPE_LINK_TX_ID:
-//		break;
+		return CRSF_unknown;
 	case CRSF_FRAMETYPE_ATTITUDE:
-		break;
-//	case CRSF_FRAMETYPE_MAVLINK_FC:
-//		break;
+		return CRSF_unknown;
+	case CRSF_FRAMETYPE_VARIO:
+		return CRSF_unknown;
+	case CRSF_FRAMETYPE_BATTERY_SENSOR:
+		return CRSF_unknown;
+	case CRSF_FRAMETYPE_BARO_ALTITUDE:
+		return CRSF_unknown;
+	case CRSF_FRAMETYPE_OPENTX_SYNC:
+		return CRSF_unknown;
 	case CRSF_FRAMETYPE_FLIGHT_MODE:
-		break;
-//	case CRSF_FRAMETYPE_ESP_NOW_MSG:
-//		break;
+		return CRSF_unknown;
 	case CRSF_FRAMETYPE_PING_DEVICES:
-		break;
+		return CRSF_unknown;
 	case CRSF_FRAMETYPE_DEVICE_INFO:
-		break;
+		return CRSF_unknown;
 	case CRSF_FRAMETYPE_REQUEST_SETTINGS:
-		break;
+		return CRSF_unknown;
 	case CRSF_FRAMETYPE_COMMAND:
-		break;
+		return CRSF_unknown;
 	case CRSF_FRAMETYPE_RADIO:
-		break;
-
+		return CRSF_unknown;
+//	case CRSF_FRAMETYPE_GPS_TIME:
+//		return false;
+//	case CRSF_FRAMETYPE_GPS_EXT:
+//		return false;
+//	case CRSF_FRAMETYPE_AIRSPEED:
+//		return false;
+//	case CRSF_FRAMETYPE_HEARTBEAT:
+//		return false;
+//	case CRSF_FRAMETYPE_RPM:
+//		return false;
+//	case CRSF_FRAMETYPE_TEMP:
+//		return false;
+//	case CRSF_FRAMETYPE_VTX_TELEMETRY:
+//		return false;
+//	case CRSF_FRAMETYPE_SUBSET_RC_CHANNELS_PACKED:
+//		return false;
+//	case CRSF_FRAMETYPE_LINK_RX_ID:
+//		return false;
+//	case CRSF_FRAMETYPE_LINK_TX_ID:
+//		return false;
+//	case CRSF_FRAMETYPE_MAVLINK_FC:
+//		return false;
+//	case CRSF_FRAMETYPE_ESP_NOW_MSG:
+//		return false;
 	default:
-		return false;
+		return CRSF_unknown;
 	}
 
-	return true;
+	return CRSF_unknown;
 }
 
 /*
@@ -319,15 +349,20 @@ static inline void CRSF_DecodeFrame_ChannelsRC ( void )
 		// transform
 		if ( convert ) {
 			convert -= CRSF_MIN_1000;
-			convert *= RADIO_CH_FULLSCALE;
+			convert *= 1000;//RADIO_CH_FULLSCALE;
 			convert /= (CRSF_MAX_2000 - CRSF_MIN_1000);
-			convert += RADIO_CH_MIN;
+			convert += 1000;//RADIO_CH_MIN;
 		}
 	    // store
 		data[i] = convert;
 	}
 }
 
+
+static inline void CRSF_DecodeFrame_LinkStats ( void )
+{
+
+}
 
 /*
  * CRSF_CalcCRC8

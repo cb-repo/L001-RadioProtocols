@@ -52,7 +52,10 @@ RADIO_protocol_t RADIO_Init ( RADIO_protocol_t initial )
 {
 	ops.initialised = true;
 
-	if ( RADIO_tryProtocol(initial) ) { return initial; }
+	if ( RADIO_tryProtocol(initial) )
+	{
+		return initial;
+	}
 
 	for ( RADIO_protocol_t p = 0; p < RADIO_NUM_PROTOCOL; p++ ) {
 		if ( p == initial ) { continue; }
@@ -208,6 +211,8 @@ void RADIO_Update ( void )
  */
 uint32_t* RADIO_getData ( void )
 {
+	if ( !ops.initialised ) { return NULL; }
+
     switch (ops.protocol) {
 	#ifdef RADIO_USE_PPM
     case PPM:
@@ -237,6 +242,8 @@ uint32_t* RADIO_getData ( void )
  */
 uint8_t RADIO_getChCount ( void )
 {
+	if ( !ops.initialised ) { return 0; }
+
     return ops.chCount;
 }
 
@@ -245,6 +252,8 @@ uint8_t RADIO_getChCount ( void )
  */
 RADIO_chActive_t* RADIO_getChActiveCount ( void )
 {
+	if ( !ops.initialised ) { return NULL; }
+
     return ops.chActiveCount;
 }
 
@@ -254,6 +263,8 @@ RADIO_chActive_t* RADIO_getChActiveCount ( void )
  */
 uint8_t RADIO_getChValidCount ( void )
 {
+	if ( !ops.initialised ) { return 0; }
+
     return ops.chValidCount;
 }
 
@@ -263,9 +274,7 @@ uint8_t RADIO_getChValidCount ( void )
  */
 bool RADIO_inFaultStateCH ( RADIO_chIndex_t c )
 {
-	if ( !ops.initialised ) {
-		return true;
-	}
+	if ( !ops.initialised ) { return true; }
 
 	if ( ops.protocol == PWM ) {
 		return ops.getInputLost()[c];
@@ -280,9 +289,7 @@ bool RADIO_inFaultStateCH ( RADIO_chIndex_t c )
  */
 bool RADIO_inFaultStateALL ( void )
 {
-	if ( !ops.initialised ) {
-		return true;
-	}
+	if ( !ops.initialised ) { return true; }
 
 	if ( ops.protocol == PWM ) {
 		for ( uint8_t i = 0; i < ops.chCount; i++ ) {
@@ -302,9 +309,7 @@ bool RADIO_inFaultStateALL ( void )
  */
 bool RADIO_inFaultStateANY ( void )
 {
-	if ( !ops.initialised ) {
-		return true;
-	}
+	if ( !ops.initialised ) { return true; }
 
 	if ( ops.protocol == PWM ) {
 		for ( uint8_t i = 0; i < ops.chCount; i++ ) {

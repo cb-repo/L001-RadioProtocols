@@ -6,7 +6,6 @@
 
 #include "STM32X.h"
 
-#include "Core.h"
 #include "PWM.h"
 #ifdef RADIO_USE_PPM
 #include "PPM.h"
@@ -52,9 +51,9 @@
 
 #define RADIO_CH_MIN        1000
 #define RADIO_CH_MAX        2000
-#define RADIO_CH_CENTER     ((RADIO_CH_MAX - RADIO_CH_MIN) / 2) //1500
-#define RADIO_CH_FULLSCALE 	(RADIO_CH_MAX - RADIO_CH_MIN)
-#define RADIO_CH_HALFSCALE	(RADIO_CH_FULLSCALE / 2)
+#define RADIO_CH_CENTER     1500 //((RADIO_CH_MAX - RADIO_CH_MIN) / 2) //1500
+#define RADIO_CH_FULLSCALE 	1000 //(RADIO_CH_MAX - RADIO_CH_MIN)
+#define RADIO_CH_HALFSCALE	500 //(RADIO_CH_FULLSCALE / 2)
 
 #define RADIO_CH_STRETCH    300
 #define RADIO_CH_ERROR      50
